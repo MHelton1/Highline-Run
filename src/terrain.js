@@ -1,0 +1,482 @@
+// World data: heightfield, roads, surface types. Pure math, no rendering (runs in node for tests).
+export const SIZE = 3072, N = 768, CELL = SIZE / N, HALF = SIZE / 2, V = N + 1;
+import { REGIONS } from './regions.js';
+export const SNOWLINE = 250, TREELINE = 222;
+export const SURF = { ASPHALT: 0, DIRT: 1, GRASS: 2, ROCK: 3, SNOW: 4 };
+export const SURF_NAME = ['Asphalt', 'Dirt', 'Grass', 'Rock', 'Snow'];
+// grip, rolling resistance, slip angle (tan) where grip peaks
+export const SURF_PHYS = [
+  { mu: 1.05, rr: 0.013, peak: 0.14 },
+  { mu: 0.80, rr: 0.030, peak: 0.20 },
+  { mu: 0.66, rr: 0.055, peak: 0.22 },
+  { mu: 0.74, rr: 0.040, peak: 0.18 },
+  { mu: 0.42, rr: 0.075, peak: 0.26 },
+];
+
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Gradient sets. The even one (12 directions, none square to the noise grid's own lines) is used for anything that
+// gets folded into ridges; with the classic set, ridge crests come out as ruler-straight diagonal lines.
+const GRAD8 = [[1, 1], [-1, 1], [1, -1], [-1, -1], [1, 0], [-1, 0], [0, 1], [0, -1]];
+const GRAD12 = Array.from({ length: 12 }, (_, k) => [Math.cos(k * Math.PI / 6) * 1.2, Math.sin(k * Math.PI / 6) * 1.2]);
+
+function makeNoise(seed, G = GRAD8) {
+  const rnd = mulberry32(seed), p = new Uint8Array(512), GN = G.length;
+  const perm = Array.from({ length: 256 }, (_, i) => i);
+  for (let i = 255; i > 0; i--) { const j = (rnd() * (i + 1)) | 0; [perm[i], perm[j]] = [perm[j], perm[i]]; }
+  for (let i = 0; i < 512; i++) p[i] = perm[i & 255];
+  const F2 = 0.5 * (Math.sqrt(3) - 1), G2 = (3 - Math.sqrt(3)) / 6;
+  return function (x, y) {
+    const s = (x + y) * F2, i = Math.floor(x + s), j = Math.floor(y + s);
+    const t = (i + j) * G2, x0 = x - (i - t), y0 = y - (j - t);
+    const i1 = x0 > y0 ? 1 : 0, j1 = 1 - i1;
+    const x1 = x0 - i1 + G2, y1 = y0 - j1 + G2, x2 = x0 - 1 + 2 * G2, y2 = y0 - 1 + 2 * G2;
+    const ii = i & 255, jj = j & 255;
+    let n = 0, tt, g;
+    tt = 0.5 - x0 * x0 - y0 * y0; if (tt > 0) { g = G[p[ii + p[jj]] % GN]; tt *= tt; n += tt * tt * (g[0] * x0 + g[1] * y0); }
+    tt = 0.5 - x1 * x1 - y1 * y1; if (tt > 0) { g = G[p[ii + i1 + p[jj + j1]] % GN]; tt *= tt; n += tt * tt * (g[0] * x1 + g[1] * y1); }
+    tt = 0.5 - x2 * x2 - y2 * y2; if (tt > 0) { g = G[p[ii + 1 + p[jj + 1]] % GN]; tt *= tt; n += tt * tt * (g[0] * x2 + g[1] * y2); }
+    return 70 * n;
+  };
+}
+
+const smooth = (t) => { t = t < 0 ? 0 : t > 1 ? 1 : t; return t * t * (3 - 2 * t); };
+
+function catmull(pts, closed, per) {
+  const out = [], n = pts.length, segs = closed ? n : n - 1;
+  const P = (i) => closed ? pts[(i + n) % n] : pts[Math.max(0, Math.min(n - 1, i))];
+  for (let s = 0; s < segs; s++) {
+    const a = P(s - 1), b = P(s), c = P(s + 1), d = P(s + 2);
+    for (let k = 0; k < per; k++) {
+      const t = k / per, t2 = t * t, t3 = t2 * t;
+      out.push([
+        0.5 * (2 * b[0] + (c[0] - a[0]) * t + (2 * a[0] - 5 * b[0] + 4 * c[0] - d[0]) * t2 + (3 * b[0] - a[0] - 3 * c[0] + d[0]) * t3),
+        0.5 * (2 * b[1] + (c[1] - a[1]) * t + (2 * a[1] - 5 * b[1] + 4 * c[1] - d[1]) * t2 + (3 * b[1] - a[1] - 3 * c[1] + d[1]) * t3)]);
+    }
+  }
+  if (!closed) out.push(pts[n - 1].slice());
+  return out;
+}
+
+function resample(dense, closed, step) {
+  const pts = closed ? dense.concat([dense[0]]) : dense, cum = [0];
+  for (let i = 1; i < pts.length; i++) cum.push(cum[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+  const total = cum[cum.length - 1], count = Math.round(total / step), ds = total / count;
+  const xs = [], zs = [];
+  let j = 0;
+  const m = closed ? count : count + 1;
+  for (let i = 0; i < m; i++) {
+    const d = Math.min(i * ds, total);
+    while (j < cum.length - 2 && cum[j + 1] < d) j++;
+    const f = (d - cum[j]) / Math.max(1e-9, cum[j + 1] - cum[j]);
+    xs.push(pts[j][0] + (pts[j + 1][0] - pts[j][0]) * f); zs.push(pts[j][1] + (pts[j + 1][1] - pts[j][1]) * f);
+  }
+  return { x: Float32Array.from(xs), z: Float32Array.from(zs), ds, n: m };
+}
+
+export function buildWorld(regionId = 'mountain') {
+  if (typeof regionId !== 'string' || !REGIONS[regionId]) regionId = 'mountain';
+  const RG = REGIONS[regionId], seed = RG.seed, snowline = RG.snow ? SNOWLINE : 1e9, treeline = RG.snow ? TREELINE : 1e9;
+  const noise = makeNoise(seed, GRAD12), noise2 = makeNoise(seed + 101);
+  const ROT = Array.from({ length: 6 }, (_, o) => [Math.cos(0.35 + o * 0.62), Math.sin(0.35 + o * 0.62)]);
+  const mountain = (x0, z0) => {
+    // bend the map a little before reading the ridges, so crests wander like real ones instead of running straight
+    const x = x0 + 95 * noise2(x0 / 640 + 11.5, z0 / 640 - 4.2) + 26 * noise2(x0 / 190 - 7, z0 / 190 + 23);
+    const z = z0 + 95 * noise2(x0 / 640 - 30.1, z0 / 640 + 17.7) + 26 * noise2(x0 / 190 + 41, z0 / 190 - 13);
+    let f = 0, amp = 1, freq = 1 / 2100, sum = 0;
+    for (let o = 0; o < 6; o++) {
+      // big shapes are sharp ridges; the two finest layers are soft bumps, so small crests do not act as launch ramps.
+      // Each layer is turned to its own angle so no grid direction repeats across layers.
+      const c = ROT[o][0], sn = ROT[o][1];
+      const nv = noise((x * c - z * sn) * freq + o * 17.3, (x * sn + z * c) * freq - o * 31.7);
+      // (ridge crests are rounded off a little, which leaves far more of the mountain climbable than knife edges do)
+      let r = o < 4 ? (1 - Math.sqrt(nv * nv + 0.016)) ** 2 : 0.5 + 0.5 * nv;
+      f += r * amp; sum += amp; amp *= 0.34; freq *= 2.07;
+    }
+    f /= sum;
+    const r2 = (x0 * x0 + z0 * z0) / (540 * 540);
+    return 40 + Math.pow(f, 1.6) * 310 + 160 * Math.exp(-r2) + 28 * noise2(x0 / 420, z0 / 420);
+  };
+  // The desert: a wide basin floor with dune fields, broken by flat-topped mesas in two steps with cliffs between,
+  // and a big central butte for the trail to cross.
+  const desert = (x0, z0) => {
+    const x = x0 + 120 * noise2(x0 / 700 + 3.1, z0 / 700 - 8.4) + 30 * noise2(x0 / 170 - 2, z0 / 170 + 6);
+    const z = z0 + 120 * noise2(x0 / 700 - 21.7, z0 / 700 + 12.2) + 30 * noise2(x0 / 170 + 33, z0 / 170 - 19);
+    const r2 = (x0 * x0 + z0 * z0) / (600 * 600);
+    let h = 45 + 30 * noise2(x0 / 1100 + 4, z0 / 1100) + 7 * noise2(x0 / 160, z0 / 160 + 5);
+    const field = smooth((noise2(x0 / 800 + 20, z0 / 800 - 6) - 0.05) / 0.3);                      // dunes, in patches
+    h += field * 4.5 * (0.5 + 0.5 * Math.sin((x0 * 0.8 + z0 * 0.6) / 34 + 3 * noise2(x0 / 210, z0 / 210)));
+    const m = noise(x / 900, z / 900) * 0.72 + noise(x / 330 + 7.7, z / 330 - 2.1) * 0.28 + 0.32 * Math.exp(-r2);
+    const step1 = smooth((m - 0.2) / 0.08), step2 = smooth((m - 0.44) / 0.07);
+    h += step1 * 48 + step2 * 42 + 70 * Math.exp(-r2 * 1.4);
+    h += (2 + 3 * step1) * noise(x0 / 55 + 3, z0 / 55);                                               // weathering
+    return h;
+  };
+  // The coast: green hills on a big headland, a central ridge for the trail, falling to beaches and, in places, cliffs.
+  // Beyond the shore the sea floor drops away under the water (world.sea is the water level).
+  const SEA = RG.sea ?? null;
+  const coast = (x0, z0) => {
+    const x = x0 + 110 * noise2(x0 / 650 + 5.3, z0 / 650 - 1.4) + 28 * noise2(x0 / 180 - 9, z0 / 180 + 2);
+    const z = z0 + 110 * noise2(x0 / 650 - 14.2, z0 / 650 + 8.8) + 28 * noise2(x0 / 180 + 21, z0 / 180 - 7);
+    const r = Math.hypot(x, z), a = Math.atan2(z, x), edge = 1290 + 120 * noise2(Math.cos(a) * 1.7 + 3, Math.sin(a) * 1.7 - 2) + 50 * noise2(Math.cos(a) * 5, Math.sin(a) * 5 + 7);
+    const cliff = smooth((noise2(Math.cos(a) * 1.4 - 6, Math.sin(a) * 1.4 + 4) - 0.05) / 0.25);         // stretches of cliff
+    const width = 240 - 180 * cliff, land = smooth((edge - r) / width);
+    let hills = 0, amp = 1, freq = 1 / 900, sum = 0;
+    for (let o = 0; o < 4; o++) { hills += (0.5 + 0.5 * noise(x * freq + o * 9.1, z * freq - o * 4.7)) * amp; sum += amp; amp *= 0.42; freq *= 2.1; }
+    hills /= sum;
+    const r2 = (x0 * x0 + z0 * z0) / (520 * 520);
+    const top = 30 + 70 * hills * hills + 120 * Math.exp(-r2) + 30 * cliff * smooth((edge - r) / 120) * (1 - smooth((edge - r - 260) / 260));   // cliffs stand a little higher than beaches
+    return SEA - 22 - 26 * (1 - land) + land * (22 + top);
+  };
+  const natural = RG.ground === 'desert' ? desert : RG.ground === 'coast' ? coast : mountain;
+
+  const heights = new Float32Array(V * V);
+  for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) heights[j * V + i] = natural(i * CELL - HALF, j * CELL - HALF);
+
+  // ---- roads ----
+  const roads = [];
+  const limitSlope = (h, ds, g, closed, pinEnds) => {
+    const n = h.length, m = g * ds;
+    for (let pass = 0; pass < 3; pass++) {
+      const a = Float32Array.from(h), b = Float32Array.from(h);
+      const lim = closed ? 2 * n : n;
+      for (let k = 1; k < lim; k++) { const i = k % n, p = (k - 1) % n; a[i] = Math.max(a[p] - m, Math.min(a[p] + m, a[i])); }
+      for (let k = lim - 2; k >= 0; k--) { const i = k % n, p = (k + 1) % n; b[i] = Math.max(b[p] - m, Math.min(b[p] + m, b[i])); }
+      for (let i = 0; i < n; i++) { const t = pinEnds ? i / (n - 1) : 0.5; h[i] = a[i] * (1 - t) + b[i] * t; }
+    }
+  };
+  const blur = (h, w, closed, passes, pinEnds) => {
+    const n = h.length;
+    for (let p = 0; p < passes; p++) {
+      const src = Float32Array.from(h);
+      for (let i = 0; i < n; i++) {
+        let s = 0, c = 0;
+        const ww = closed ? w : Math.min(w, i, n - 1 - i);
+        for (let k = -ww; k <= ww; k++) { s += src[closed ? (i + k + n) % n : i + k]; c++; }
+        h[i] = s / c;
+      }
+      if (pinEnds) { h[0] = pinEnds[0]; h[n - 1] = pinEnds[1]; }
+    }
+  };
+
+  // main loop road (asphalt)
+  {
+    const K = 18, cps = [];
+    for (let i = 0; i < K; i++) {
+      const a = i / K * Math.PI * 2;
+      const r = 960 + 250 * noise2(Math.cos(a) * 1.3 + 5, Math.sin(a) * 1.3 - 3) + 70 * noise2(Math.cos(a) * 4, Math.sin(a) * 4 + 9);
+      cps.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    const s = resample(catmull(cps, true, 60), true, 2);
+    const h = new Float32Array(s.n);
+    for (let i = 0; i < s.n; i++) h[i] = natural(s.x[i], s.z[i]);
+    blur(h, 70, true, 3); limitSlope(h, s.ds, 0.09, true); blur(h, 12, true, 2);
+    if (SEA !== null) for (let k = 0; k < 3; k++) { for (let i = 0; i < s.n; i++) h[i] = Math.max(h[i], SEA + 4); blur(h, 25, true, 1); }   // the coast road stays above the water
+    roads.push({ ...s, h, closed: true, hw: 5, surf: SURF.ASPHALT, blend: 210, name: RG.ring });
+  }
+  // dirt trail over the central shoulder
+  {
+    const L = roads[0], iA = 0, iB = Math.floor(L.n * (RG.trailEnd ?? 0.52));
+    const A = [L.x[iA], L.z[iA]], B = [L.x[iB], L.z[iB]];
+    const dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz), px = -dz / len, pz = dx / len;
+    const cps = [A], M = 9;
+    for (let k = 1; k < M; k++) {
+      const t = k / M, bow = (RG.trailBow ?? 250) * Math.sin(Math.PI * t), wig = (k % 2 ? 1 : -1) * 85 * Math.sin(Math.PI * t);
+      cps.push([A[0] + dx * t + px * (bow + wig), A[1] + dz * t + pz * (bow + wig)]);
+    }
+    cps.push(B);
+    const s = resample(catmull(cps, false, 60), false, 2);
+    const h = new Float32Array(s.n);
+    // Near each junction the trail lies on the ring road's own surface, so the two never disagree about the ground.
+    const ringAt = (x, z) => { let m = 1e18, k = 0; for (let i = 0; i < L.n; i++) { const d = (L.x[i] - x) ** 2 + (L.z[i] - z) ** 2; if (d < m) { m = d; k = i; } } return [Math.sqrt(m), L.h[k]]; };
+    let k0 = 0, k1 = s.n - 1;
+    for (let i = 0; i < s.n; i++) { const [d, rh] = ringAt(s.x[i], s.z[i]); h[i] = d < 17 ? rh : natural(s.x[i], s.z[i]); if (d < 17) { if (i < s.n / 2) k0 = i; else if (k1 === s.n - 1) k1 = i; } }
+    const mid = h.slice(k0, k1 + 1), pin = [h[k0], h[k1]];
+    blur(mid, 30, false, 3, pin); limitSlope(mid, s.ds, 0.2, false, pin); blur(mid, 8, false, 2, pin);
+    h.set(mid, k0);
+    roads.push({ ...s, h, closed: false, hw: 3.5, surf: SURF.DIRT, blend: 95, name: RG.trail });
+  }
+
+  // ---- places: garages and pull-outs beside the roads, camps out in the wild, race start lines ----
+  // Chosen before the ground is shaped, so each place gets a flat lot cut into the terrain.
+  const ring = roads[0], trail = roads[1];
+  const frame = (road, i) => {   // position, unit tangent and unit left vector at sample i
+    const a = road.closed ? (i - 1 + road.n) % road.n : Math.max(0, i - 1), b = road.closed ? (i + 1) % road.n : Math.min(road.n - 1, i + 1);
+    let tx = road.x[b] - road.x[a], tz = road.z[b] - road.z[a]; const l = Math.hypot(tx, tz); tx /= l; tz /= l;
+    return { x: road.x[i], z: road.z[i], h: road.h[i], tx, tz, lx: tz, lz: -tx, yaw: Math.atan2(tx, tz) };
+  };
+  const flattest = (road, frac, span) => {
+    const c = Math.floor(road.n * frac); let best = c, bg = 1e9;
+    for (let k = -span; k <= span; k += 2) { const i = (c + k + road.n) % road.n, g = Math.abs(road.h[(i + 10) % road.n] - road.h[(i - 10 + road.n) % road.n]); if (g < bg) { bg = g; best = i; } }
+    return best;
+  };
+  const gentler = (f) => Math.abs(natural(f.x + f.lx * 30, f.z + f.lz * 30) - f.h) <= Math.abs(natural(f.x - f.lx * 30, f.z - f.lz * 30) - f.h) ? 1 : -1;
+  const roadGap = (x, z) => { let m = 1e18; for (const road of roads) for (let i = 0; i < road.n; i += 4) { const d = (road.x[i] - x) ** 2 + (road.z[i] - z) ** 2; if (d < m) m = d; } return Math.sqrt(m); };
+  const shoulders = [], pads = [], places = { sites: [], garages: [], lines: {} };
+  const beside = (f, side, d) => [f.x + f.lx * side * d, f.z + f.lz * side * d];
+  [[RG.garages[0], 0.03], [RG.garages[1], 0.56]].forEach(([name, frac]) => {
+    const idx = flattest(ring, frac, 40), f = frame(ring, idx), side = gentler(f);
+    shoulders.push({ r: 0, idx, side, f, len: 17, width: 27 });
+    const [x, z] = beside(f, side, ring.hw + 11), [bx, bz] = beside(f, side, ring.hw + 27);
+    places.garages.push({ name, idx, side, x, z, yaw: f.yaw, bx, bz, byaw: Math.atan2(-f.lx * side, -f.lz * side) });
+  });
+  [0.14, 0.30, 0.44, 0.66, 0.82].map((f, k) => [RG.sites[k], f]).forEach(([name, frac], k) => {
+    const idx = Math.floor(ring.n * frac), f = frame(ring, idx), side = k % 2 ? 1 : -1;
+    shoulders.push({ r: 0, idx, side, f, len: 9, width: 13 });
+    const [x, z] = beside(f, side, ring.hw + 3), [hutX, hutZ] = beside(f, side, ring.hw + 18);
+    places.sites.push({ name, x, z, wild: false, hutX, hutZ, yaw: f.yaw });
+  });
+  [[RG.trailSites[0], 0.33], [RG.trailSites[1], 0.67]].forEach(([name, frac], k) => {
+    const idx = Math.floor(trail.n * frac), f = frame(trail, idx), side = k % 2 ? 1 : -1;
+    shoulders.push({ r: 1, idx, side, f, len: 7, width: 8 });
+    const [hutX, hutZ] = beside(f, side, trail.hw + 9);
+    places.sites.push({ name, x: f.x, z: f.z, wild: true, hutX, hutZ, yaw: f.yaw });
+  });
+  // pull-in where the off-road time trial starts (its checkpoints are chosen further down, once the ground is shaped)
+  {
+    const idx = flattest(ring, 0.36, 30), f = frame(ring, idx);
+    shoulders.push({ r: 0, idx, side: -1, f, len: 10, width: 16 });
+    const [x, z] = beside(f, -1, ring.hw + 13);
+    places.trial = { x, z, yaw: Math.atan2(-f.lx, -f.lz), idx, gates: [] };
+  }
+  // start and finish lines
+  places.lines.ring = { road: 0, idx: flattest(ring, 0.07, 30) };
+  places.lines.dashStart = { road: 1, idx: 30 };
+  places.lines.dashEnd = { road: 1, idx: trail.n - 31 };
+  const shoulderAt = (r, road, s, x, z) => {   // extra flat width beside the road at sample s, on the side this point lies on
+    let extra = 0;
+    for (const sh of shoulders) {
+      if (sh.r !== r) continue;
+      let da = Math.abs(s - sh.idx); if (road.closed) da = Math.min(da, road.n - da);
+      da *= road.ds; if (da >= sh.len + 16) continue;
+      if (((x - road.x[s]) * sh.f.lx + (z - road.z[s]) * sh.f.lz) * sh.side <= 0) continue;
+      extra = Math.max(extra, sh.width * (1 - smooth((da - sh.len) / 16)));
+    }
+    return extra;
+  };
+
+  // Stamp roads into the heightfield. Each vertex is pulled toward every nearby road's height, weighted so that
+  // the closest road wins outright on its own bed and the hand-over between two roads is smooth.
+  const roadDist = new Float32Array(V * V).fill(1e9);
+  for (const road of roads) road.ref = new Int32Array(V * V).fill(-1);
+  const stamps = roads.map((road) => {
+    const D = road.blend, d2 = new Float32Array(V * V).fill(1e12), idx = new Int32Array(V * V).fill(-1);
+    const R = Math.ceil(D / CELL);
+    for (let s = 0; s < road.n; s++) {
+      const px = road.x[s], pz = road.z[s], ci = Math.round((px + HALF) / CELL), cj = Math.round((pz + HALF) / CELL);
+      const j0 = Math.max(0, cj - R), j1 = Math.min(N, cj + R), i0 = Math.max(0, ci - R), i1 = Math.min(N, ci + R);
+      for (let j = j0; j <= j1; j++) {
+        const dz = j * CELL - HALF - pz, dz2 = dz * dz, row = j * V;
+        for (let i = i0; i <= i1; i++) {
+          const dx = i * CELL - HALF - px, dd = dx * dx + dz2;
+          if (dd < d2[row + i]) { d2[row + i] = dd; idx[row + i] = s; }
+        }
+      }
+    }
+    return { d2, idx };
+  });
+  for (let v = 0; v < V * V; v++) {
+    let keep = 1, wSum = 0, tSum = 0;
+    const x = (v % V) * CELL - HALF, z = ((v / V) | 0) * CELL - HALF;
+    for (let r = 0; r < roads.length; r++) {
+      const road = roads[r], st = stamps[r];
+      if (st.idx[v] < 0) continue;
+      const d = Math.sqrt(st.d2[v]); if (d >= road.blend) continue;
+      const extra = shoulders.length ? shoulderAt(r, road, st.idx[v], x, z) : 0;
+      const inner = road.hw + 6 + extra, a = 1 - smooth((d - inner) / (road.blend - inner));
+      const wgt = a / (1 - a + (r === 0 ? 1e-5 : 1e-3));          // the ring road has the last word on its own bed
+      // the bed sits well under the road ribbon, and only a small step below it beside the road
+      wSum += wgt; tSum += wgt * (road.h[st.idx[v]] - (d < road.hw + 1 ? 0.3 : 0.14)); keep *= 1 - a;
+      if (d < road.hw + 8) road.ref[v] = st.idx[v];
+      const de = Math.max(0, d - extra); if (de < roadDist[v]) roadDist[v] = de;
+    }
+    if (wSum > 0) heights[v] = heights[v] * keep + (tSum / wSum) * (1 - keep);
+  }
+
+  // ---- which ground can a car get to from the roads without tackling anything steeper than about 25 degrees? ----
+  const RC = 3, RN = N / RC, reach = new Uint8Array(RN * RN), steepR = new Float32Array(RN * RN);
+  {
+    // steepness of each 12 m cell = the steepest spot inside it, so a narrow bank is not averaged away
+    const hv = (i, j) => heights[Math.max(0, Math.min(N, j)) * V + Math.max(0, Math.min(N, i))];
+    for (let j = 0; j < RN; j++) for (let i = 0; i < RN; i++) {
+      let m = 0;
+      for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const vi = i * RC + a, vj = j * RC + b; m = Math.max(m, Math.hypot(hv(vi + 1, vj) - hv(vi - 1, vj), hv(vi, vj + 1) - hv(vi, vj - 1)) / (2 * CELL)); }
+      steepR[j * RN + i] = SEA !== null && hv(i * RC, j * RC) < SEA + 0.6 ? 9 : m;     // the sea counts as a wall
+    }
+    const queue = [];
+    for (let j = 0; j < RN; j++) for (let i = 0; i < RN; i++) if (roadDist[j * RC * V + i * RC] < 8) { reach[j * RN + i] = 1; queue.push(j * RN + i); }
+    for (let q = 0; q < queue.length; q++) {
+      const c = queue[q], ci = c % RN, cj = (c / RN) | 0;
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+        const ni = ci + a, nj = cj + b, nc = nj * RN + ni;
+        if (ni < 2 || nj < 2 || ni >= RN - 2 || nj >= RN - 2 || reach[nc] || steepR[nc] > 0.47) continue;
+        reach[nc] = 1; queue.push(nc);
+      }
+    }
+  }
+  const rcell = (x, z) => Math.max(0, Math.min(RN - 1, Math.round((z + HALF) / (RC * CELL)))) * RN + Math.max(0, Math.min(RN - 1, Math.round((x + HALF) / (RC * CELL))));
+  // gentle, reachable ground: this spot and everything within 24 m of it
+  const easy = (x, z, lim = 0.2) => { if (steepR[rcell(x, z)] > lim) return false; for (let a = -24; a <= 24; a += 12) for (let b = -24; b <= 24; b += 12) { const c = rcell(x + a, z + b); if (!reach[c] || steepR[c] > lim + 0.14) return false; } return true; };
+  const gridH = (x, z) => heights[Math.round((z + HALF) / CELL) * V + Math.round((x + HALF) / CELL)];
+  {
+    let sd = seed * 977 + 13, tries = 0; const rnd = () => { sd = (sd * 1664525 + 1013904223) >>> 0; return sd / 4294967296; };
+    for (const name of RG.camps) {
+      while (tries++ < 9000) {
+        const x = (rnd() - 0.5) * 2300, z = (rnd() - 0.5) * 2300, h = gridH(x, z);
+        if (h > snowline - 35 || (SEA !== null && h < SEA + 5) || !easy(x, z)) continue;
+        const gap = roadGap(x, z); if (gap < 170 || gap > 520) continue;
+        if (places.sites.some((s) => Math.hypot(s.x - x, s.z - z) < 420)) continue;
+        pads.push({ x, z, r: 14, blend: 46, h });
+        places.sites.push({ name, x, z, wild: true, hutX: x + 9, hutZ: z + 4, yaw: rnd() * 6.28 });
+        break;
+      }
+    }
+    // time trial checkpoints: rough waypoints, each moved to the gentlest reachable ground nearby
+    const calm = (x0, z0) => {
+      let best = null, bs = 1e9;
+      for (let a = -96; a <= 96; a += 12) for (let b = -96; b <= 96; b += 12) {
+        const x = x0 + a, z = z0 + b; if (!easy(x, z, 0.26)) continue;
+        const sc = steepR[rcell(x, z)] + Math.hypot(a, b) * 0.0015; if (sc < bs) { bs = sc; best = { x, z }; }
+      }
+      return best;
+    };
+    const via = (n) => { const s = places.sites.find((q) => q.name === n); return s ? { x: s.x, z: s.z, name: n } : null; };
+    places.trial.gates = [...RG.trialGates.map(([x, z]) => calm(x, z)), via(RG.trialVia)].filter(Boolean);
+  }
+  // flat lots for the camps (they sit well away from the roads, so a plain blend into the shaped ground is enough)
+  for (const p of pads) {
+    const R = p.r + p.blend, i0 = Math.max(0, Math.floor((p.x - R + HALF) / CELL)), i1 = Math.min(N, Math.ceil((p.x + R + HALF) / CELL)), j0 = Math.max(0, Math.floor((p.z - R + HALF) / CELL)), j1 = Math.min(N, Math.ceil((p.z + R + HALF) / CELL));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      const d = Math.hypot(i * CELL - HALF - p.x, j * CELL - HALF - p.z); if (d >= R) continue;
+      const a = 1 - smooth((d - p.r) / p.blend), v = j * V + i;
+      heights[v] += (p.h - heights[v]) * a;
+      const de = Math.max(0, d - p.r + 8.5); if (de < roadDist[v]) roadDist[v] = de;
+    }
+  }
+
+  // normals + surface types
+  const normals = new Float32Array(V * V * 3), surf = new Uint8Array(V * V), snowT = new Float32Array(V * V), rockT = new Float32Array(V * V);
+  for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) {
+    const v = j * V + i;
+    const hl = heights[j * V + Math.max(0, i - 1)], hr = heights[j * V + Math.min(N, i + 1)];
+    const hd = heights[Math.max(0, j - 1) * V + i], hu = heights[Math.min(N, j + 1) * V + i];
+    const nx = -(hr - hl) / (2 * CELL), nz = -(hu - hd) / (2 * CELL), il = 1 / Math.hypot(nx, 1, nz);
+    normals[v * 3] = nx * il; normals[v * 3 + 1] = il; normals[v * 3 + 2] = nz * il;
+    const x = i * CELL - HALF, z = j * CELL - HALF, h = heights[v];
+    rockT[v] = 1 - smooth((il - 0.72) / 0.13);
+    snowT[v] = smooth((h + 34 * noise2(x / 90, z / 90) - (snowline - 22)) / 44) * smooth((il - 0.5) / 0.22);
+    surf[v] = roadDist[v] < 9 ? SURF.DIRT : SEA !== null && h < SEA + 2.5 ? SURF.DIRT : snowT[v] > 0.5 ? SURF.SNOW : rockT[v] > 0.5 ? SURF.ROCK : SURF.GRASS;
+  }
+
+  // trim the trail where it overlaps the ring road
+  const nearRing = (x, z) => { let m = 1e9; for (let i = 0; i < ring.n; i += 2) { const d = Math.hypot(ring.x[i] - x, ring.z[i] - z); if (d < m) m = d; } return m; };
+  let t0 = 0, t1 = trail.n - 1;
+  while (t0 < trail.n - 2 && nearRing(trail.x[t0], trail.z[t0]) < ring.hw - 0.6) t0++;
+  while (t1 > 1 && nearRing(trail.x[t1], trail.z[t1]) < ring.hw - 0.6) t1--;
+  trail.from = t0; trail.to = t1; ring.from = 0; ring.to = ring.n - 1;
+
+  const world = { region: regionId, regionDef: RG, sea: SEA, heights, normals, surf, snowT, rockT, roadDist, roads, noise: noise2, seed, trees: [], treeHash: new Map(), places, frame, half: HALF, reach, reachN: RN, steepR };
+
+  // project a point onto a road near sample s; returns lateral distance, writes height + tangent
+  const proj = { h: 0, tx: 0, tz: 1, slope: 0, d: 0, px: 0, pz: 0 };
+  const RAMP = 1.6;   // metres of embankment between the road surface and the ground beside it
+  function projectRoad(road, s, x, z) {
+    let best = 1e9;
+    for (let k = s - 4; k <= s + 3; k++) {
+      let a = k, b = k + 1;
+      if (road.closed) { a = (a + road.n) % road.n; b = (b + road.n) % road.n; }
+      else if (a < road.from || b > road.to) continue;
+      const ax = road.x[a], az = road.z[a], ex = road.x[b] - ax, ez = road.z[b] - az, l2 = ex * ex + ez * ez;
+      let t = ((x - ax) * ex + (z - az) * ez) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
+      const d = Math.hypot(x - ax - ex * t, z - az - ez * t);
+      if (d < best) { best = d; const l = Math.sqrt(l2); proj.h = road.h[a] + (road.h[b] - road.h[a]) * t; proj.tx = ex / l; proj.tz = ez / l; proj.slope = (road.h[b] - road.h[a]) / l; proj.px = ax + ex * t; proj.pz = az + ez * t; }
+    }
+    proj.d = best; return best;
+  }
+
+  // ground query: returns height, fills out.nx/ny/nz and out.surf
+  world.sample = function (x, z, out) {
+    let gx = (x + HALF) / CELL, gz = (z + HALF) / CELL;
+    gx = gx < 0 ? 0 : gx > N - 1e-4 ? N - 1e-4 : gx; gz = gz < 0 ? 0 : gz > N - 1e-4 ? N - 1e-4 : gz;
+    const i = gx | 0, j = gz | 0, fx = gx - i, fz = gz - j, v = j * V + i;
+    const nv = (fz > 0.5 ? j + 1 : j) * V + (fx > 0.5 ? i + 1 : i);
+    const h00 = heights[v], h10 = heights[v + 1], h01 = heights[v + V], h11 = heights[v + V + 1];
+    const hGrid = (h00 * (1 - fx) + h10 * fx) * (1 - fz) + (h01 * (1 - fx) + h11 * fx) * fz;
+    for (let r = 0; r < roads.length; r++) {
+      const s = roads[r].ref[nv];
+      if (s < 0) continue;
+      const hw = roads[r].hw, d = projectRoad(roads[r], s, x, z);
+      if (d >= hw + RAMP) continue;
+      const t = d <= hw ? 0 : (d - hw) / RAMP;
+      if (out) {
+        let gx = proj.tx * proj.slope, gz = proj.tz * proj.slope;
+        if (t > 0) { const k = (hGrid - proj.h) / RAMP / d; gx += (x - proj.px) * k; gz += (z - proj.pz) * k; }
+        const il = 1 / Math.hypot(gx, 1, gz);
+        out.nx = -gx * il; out.ny = il; out.nz = -gz * il; out.surf = t < 0.5 ? roads[r].surf : surf[nv];
+      }
+      return proj.h + (hGrid - proj.h) * t;
+    }
+    if (out) {
+      const dhx = ((h10 - h00) * (1 - fz) + (h11 - h01) * fz) / CELL, dhz = ((h01 - h00) * (1 - fx) + (h11 - h10) * fx) / CELL;
+      const il = 1 / Math.hypot(dhx, 1, dhz);
+      out.nx = -dhx * il; out.ny = il; out.nz = -dhz * il; out.surf = surf[nv];
+    }
+    return hGrid;
+  };
+
+  world.nearestRoad = function (x, z) {
+    let best = 1e18, res = null;
+    for (const road of roads) for (let i = road.from; i <= road.to; i++) {
+      const d = (road.x[i] - x) ** 2 + (road.z[i] - z) ** 2;
+      if (d < best) { best = d; const k = Math.min(i + 1, road.n - 1) === i ? i - 1 : i; const b = road.closed ? (k + 1) % road.n : k + 1; res = { x: road.x[i], z: road.z[i], h: road.h[i], yaw: Math.atan2(road.x[b] - road.x[k], road.z[b] - road.z[k]), road }; }
+    }
+    return res;
+  };
+
+  // trees
+  world.placeTrees = function (count) {
+    const rnd = mulberry32(seed * 31 + 5), q = {};
+    let tries = 0;
+    while (world.trees.length < count && tries++ < count * 12) {
+      const x = (rnd() - 0.5) * (SIZE - 80), z = (rnd() - 0.5) * (SIZE - 80);
+      const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL), v = j * V + i;
+      if (surf[v] !== SURF.GRASS || roadDist[v] < 16 || normals[v * 3 + 1] < 0.86) continue;
+      const h = world.sample(x, z, q);
+      if (h > treeline - rnd() * 50 || (SEA !== null && h < SEA + 4)) continue;
+      if (noise2(x / 260 + 40, z / 260) < -0.25 + rnd() * 0.3) continue;
+      const t = { x, z, y: h, s: 0.75 + rnd() * 0.9, r: rnd() * 6.28 };
+      world.trees.push(t);
+      const key = ((x + HALF) >> 4) * 4096 + ((z + HALF) >> 4);
+      if (!world.treeHash.has(key)) world.treeHash.set(key, []);
+      world.treeHash.get(key).push(t);
+    }
+  };
+  // solid things the cars can hit, kept in the same 16 m buckets as the trees
+  world.addCollider = function (x, z, rad) {
+    const t = { x, z, y: world.sample(x, z), rad }, key = ((x + HALF) >> 4) * 4096 + ((z + HALF) >> 4);
+    if (!world.treeHash.has(key)) world.treeHash.set(key, []);
+    world.treeHash.get(key).push(t);
+    return t;
+  };
+  for (const s of places.sites) { s.y = world.sample(s.x, s.z); s.hutY = world.sample(s.hutX, s.hutZ); world.addCollider(s.hutX, s.hutZ, 3.3); }
+  for (const g of places.garages) {
+    g.y = world.sample(g.x, g.z); g.by = world.sample(g.bx, g.bz);
+    const f = g.f = frame(ring, g.idx);
+    for (const k of [-4.6, 0, 4.6]) world.addCollider(g.bx + f.tx * k, g.bz + f.tz * k, 5.6);
+  }
+  for (const key in places.lines) {
+    const L = places.lines[key], road = roads[L.road], f = frame(road, L.idx);
+    Object.assign(L, { x: f.x, z: f.z, y: f.h, yaw: f.yaw, hw: road.hw, f });
+    for (const sg of [-1, 1]) world.addCollider(f.x + f.lx * sg * (road.hw + 1.7), f.z + f.lz * sg * (road.hw + 1.7), 1.2);
+  }
+  { const t = places.trial; t.y = world.sample(t.x, t.z); for (const g of t.gates) g.y = world.sample(g.x, g.z); }
+  world.spawn = () => { const g = places.garages[0]; return { x: g.x, z: g.z, h: g.y, yaw: g.yaw }; };
+  return world;
+}

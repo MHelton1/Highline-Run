@@ -1,6 +1,6 @@
 # Highline Run: browser prototype, build 20
 
-**Play it:** https://mhelton1.github.io/highline-run/ (works on a phone; progress is saved in that browser).
+**Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
 `index.html` at the top of this repository is the built game, so GitHub Pages serves it as is. After changing anything in `src/` or `template.html`, run `npm install` once, then `node build.mjs` and copy `dist/index.html` over `index.html`.
 

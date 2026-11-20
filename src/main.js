@@ -19,6 +19,7 @@ import { createTilt, createWake, buzz, canBuzz } from './phone.js';
 import { cupRound, cupTeams, newCup, scoreRound, cupTable, cupPlace, cupOver, purse, CUP_ROUNDS, CUP_NAME, CUP_CAR } from './cup.js';
 import { createUI, money, clock } from './ui.js';
 import { mapPoints, pickPoint, arrived, pixelToWorld, mapView } from './nav.js';
+import { nextTip, skipped, TIP_SHOW } from './tips.js';
 import { DriftMeter, slideAngle, driftPay, trapPay, placeTraps, crossed, MPH, TRAP_MIN_MPH, NitroTank, NITRO } from './stunts.js';
 import { REGIONS, REGION_IDS } from './regions.js';
 
@@ -189,6 +190,29 @@ function start(hot) {
       toast(`Barn find! The ${CARS[b.car].base.name} is yours. It is waiting in your garage`, 5); audio.chime([523, 659, 784, 1047, 1319]);
     }
   }
+  // ---- tips for new players: one short hint at a time, each shown once (Tips in the menu turns them off or back on) ----
+  let tipSince = 15, tipUp = 0, tipCheck = 0, driveT = 0, stuckT = 0;
+  const tipEl = $('tip');
+  function tipContext() {
+    const s = S(); let near = null, nd = 60;
+    for (const z of zones) { const d = Math.hypot(car.pos.x - z.x, car.pos.z - z.z); if (d < nd) { nd = d; near = z.kind; } }
+    const delivered = Object.values(s.stats || {}).reduce((a, st) => a + (st.d || 0), 0);
+    return { t: driveT, job: !!game.job, heat: !!game.heat, near, cars: Object.keys(s.cars).length, raced: Object.keys(s.rank).length > 0, delivered, stuck: stuckT > 6, cash: s.cash, nitro: !!s.nitro, goalsDone: s.done.length, touch: coarse };
+  }
+  function hideTip() { tipUp = 0; tipEl.hidden = true; }
+  function tipTick(dt) {
+    driveT += dt; tipSince += dt;
+    stuckT = input.throttle > 0.5 && car.speed < 1.5 ? stuckT + dt : 0;
+    if (tipUp > 0) { tipUp -= dt; if (tipUp <= 0) hideTip(); return; }
+    if ((tipCheck -= dt) > 0 || !S().tipsOn || race) return;
+    tipCheck = 0.5;
+    const c = tipContext(), s = S(), old = skipped(c, s.tips);
+    if (old.length) { s.tips.push(...old); store.commit(); }
+    const tip = nextTip(c, s.tips, tipSince); if (!tip) return;
+    s.tips.push(tip.id); store.commit();
+    $('tip-text').textContent = tip.text(c); tipEl.hidden = false; tipUp = TIP_SHOW; tipSince = 0;
+  }
+  tipEl.addEventListener('click', () => { hideTip(); if (driving()) canvas.focus(); });
   function landed(t) {              // back on the ground after a jump: long air pays outside races
     if (mode === 'roam' && S().nitro) nitro.add(t * NITRO.perAir);
     if (mode === 'roam' && t >= AIR_MIN) {
@@ -565,7 +589,7 @@ function start(hot) {
     toggleUnits: setUnits, toggleMute: setMute, toggleMusic: setMusic, nextWeather: () => { setWeather(WEATHER_MODES[(WEATHER_MODES.indexOf(S().weather) + 1) % WEATHER_MODES.length]); store.commit(); }, ghostTime, setGhost: (on) => { S().ghost = on; store.commit(); }, nextTime: () => { setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); }, toggleFps: () => { showFps = !showFps; if (!showFps) $('fps').textContent = ''; },
     findHints, findCars: () => FIND_IDS, showNitro,
     toggleTilt: () => setTilt(!S().tilt).then(() => { if (paused) ui.pause(); }), toggleBuzz: () => { S().buzz = !S().buzz; store.commit(); if (S().buzz) buzz(40); },
-    photo: openPhoto, map: openMap,
+    photo: openPhoto, map: openMap, tipsOn: () => S().tipsOn, toggleTips: () => { const s = S(); s.tipsOn = !s.tipsOn; if (s.tipsOn) { s.tips = []; tipSince = 15; } else hideTip(); store.commit(); },
     testCash: () => { S().cash += 10000; store.commit(); audio.buy(); }, resetProgress,
   });
   titleInfo();
@@ -843,6 +867,7 @@ function start(hot) {
 
     // HUD (15 Hz)
     hudT -= dt; if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
+    if (mode === 'roam' && driving()) tipTick(dt);
     if (hudT > 0 || mode === 'title') return;
     hudT = 1 / 15;
     const s = car.spec, m = metric();
@@ -895,7 +920,7 @@ function start(hot) {
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
-  window.__game = { nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
+  window.__game = { tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },
     get drawn() { const r = renderer.info.render; return { quality, locked, shadows: sun.castShadow, triangles: r.triangles, calls: r.calls, small: smallMeshes.reduce((n, m) => n + m.count, 0), smallShown: smallMeshes.reduce((n, m) => n + (m.visible ? m.count : 0), 0) }; },
     get ghost() { return ghost && { time: ghost.time, n: ghost.n, splits: ghost.splits.length, shown: !!ghostVis && ghostVis.car.visible, pos: ghostVis ? ghostVis.car.position.toArray().map(Math.round) : null }; },

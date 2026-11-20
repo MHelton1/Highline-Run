@@ -238,6 +238,7 @@ export function createUI(g) {
         racing && el('button', { id: 'dlg-restart', type: 'button', class: 'btn', onclick: () => g.restartRace() }, 'Restart race'),
         racing && el('button', { id: 'dlg-quit', type: 'button', class: 'btn', onclick: () => g.quitRace() }, 'Leave race'),
         el('button', { id: 'dlg-map', type: 'button', class: 'btn', onclick: () => g.map() }, 'Map'),
+        el('button', { id: 'dlg-tips', type: 'button', class: 'btn', 'aria-pressed': String(!!g.tipsOn()), onclick: () => { g.toggleTips(); pause(); focusOn($('dlg-tips')); } }, 'Tips ' + (g.tipsOn() ? 'on' : 'off')),
         el('button', { id: 'dlg-photo', type: 'button', class: 'btn', onclick: () => g.photo() }, 'Photo mode'),
         el('button', { id: 'dlg-goals', type: 'button', class: 'btn', onclick: () => goals() }, `Goals ${opt.goals.done}/${opt.goals.all}`),
         el('button', { id: 'dlg-kid', type: 'button', class: 'btn' + (opt.kid ? ' on' : ''), 'aria-pressed': String(!!opt.kid), onclick: () => { g.toggleKid(); pause(); focusOn($('dlg-kid')); } }, 'Kid mode ' + (opt.kid ? 'on' : 'off')),

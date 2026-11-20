@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 23
+# Highline Run: browser prototype, build 24
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -15,6 +15,7 @@ No rendering (run in plain node, so the tests can drive them):
 
 - `src/nav.js` the big map's marker: which place a tap means (`pickPoint`), arrival, the map's view box
 - `src/stunts.js` free-roam scoring: `DriftMeter` (drift chains, multiplier, pay), speed trap spots (`placeTraps`) and crossing
+- `src/tips.js` tips for new players: each tip's trigger and skip test, `nextTip` (one at a time, 25 s apart, once each)
 - `src/terrain.js` world data: heightfield, roads, surface grip table, ground queries, places (cargo sites, garages, race lines)
 - `src/vehicle.js` rigid-body car physics on the heightfield (120 Hz fixed step, gravity 13.2)
 - `src/cars.js` the car catalog (hatch, sprint, buggy, wagon, truck, coupe, trophy, apex; `CAR_IDS` is cheapest first), upgrades, tuning sliders, `buildSpec(id, up, tune)`, `measure()` and `rate()` for showroom numbers
@@ -85,6 +86,8 @@ Pictures for judging the look (not pass or fail):
     node tests/stunts.mjs [region]                # drift meter, trap pay, trap spots in the real world
     node tests/stuntsui.cjs [desk|port] [outdir]  # speed traps pay a new best once, drift pays and shows on the dash, goals
     node tests/nitroui.cjs [port|desk] [outdir]   # nitro: buy in Parts, NOS control and tank shown, faster run, touch, not in races
+    node tests/tips.mjs                           # tip order, spacing, old saves skip the basics, save cleaning
+    node tests/tipsui.cjs [port|desk|land] [outdir]   # first tip, tap to close, gap, menu switch off and back on
     node tests/photoui.cjs [port|desk] [outdir]   # photo mode: dash hidden, drag to orbit, picture and download, back
     node tests/phoneui.cjs [port|land] [outdir]   # phone extras: tilt steering from the menu (fake tilt readings), buzz
     node tests/heatui.cjs [port|desk] [outdir]    # roadblock and backup on a hot run, getting past, clearing up
@@ -208,6 +211,9 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   `src/stunts.js`: 3.5 s of burn, refilled by drifts (score/1500), air time (0.3 per second) and driving over 15 m/s
   (1/70 per second); once empty the button must be let go. While on, `car.step` gets `boost` (6.5 m/s² forward push,
   grounded and in a forward gear) and the view widens 7°. Shift or B, LB on a controller, NOS on touch. Free driving only.
+- Tips (build 24): `tipTick` (free driving only) checks every half second; a tip shows for 9 s in `#tip` (tap to close)
+  and its id goes into `tips` in the save. Saves that have clearly done the basics (deliveries, cars, races, goals) mark
+  those tips seen without showing them. Menu "Tips on/off"; switching back on starts the list again.
 - Cargo rivals steer round a pickup's hut when their way in runs through it (the coast's huts sat on the line in).
 - Kid mode (`src/kid.js`, saved as `kid`): `kidInput()` replaces the pedals so the car drives itself at `KID` speeds
   (22 m/s tarmac, 16 dirt, 12 off road, less in turns); a held brake still stops and reverses. Cargo time x1.4, bust

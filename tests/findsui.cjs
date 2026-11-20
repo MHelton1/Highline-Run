@@ -53,7 +53,7 @@ const mode = process.argv[2] || 'port', OUT = process.argv[3] || path.join(__dir
   await p.evaluate(() => window.__game.pause()); await p.waitForTimeout(300);
   await tap('#dlg-goals'); await p.waitForTimeout(400);
   const page = await p.evaluate((r) => ({ rows: document.querySelectorAll('.goals li').length, crates: document.getElementById('goal-' + r + '-crates').textContent, barn: document.getElementById('goal-' + r + '-barn').className, air: document.getElementById('goal-' + r + '-air').textContent, finds: document.getElementById('goal-garage-finds').textContent }), info.region);
-  check('goals', page.rows === 54 && /1 \/ 12/.test(page.crates) && /11 left here/.test(page.crates) && page.barn === 'done' && /orange jump ramps/.test(page.air) && /1 \/ 3/.test(page.finds), page);
+  check('goals', page.rows === 60 && /1 \/ 12/.test(page.crates) && /11 left here/.test(page.crates) && page.barn === 'done' && /orange jump ramps/.test(page.air) && /1 \/ 3/.test(page.finds), page);
   await p.screenshot({ path: `${OUT}/finds-${mode}-goals.png` });
   await tap('#dlg-back'); await p.waitForTimeout(200); await p.evaluate(() => window.__game.resume()); await p.waitForTimeout(300);
   await p.evaluate(() => { const g = window.__game; g.openGarage(g.world.places.garages[0]); }); await p.waitForTimeout(600);

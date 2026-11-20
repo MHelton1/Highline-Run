@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { buildWorld, SURF, HALF, SIZE } from './terrain.js';
 import { Vehicle, G } from './vehicle.js';
 import { CARS, PAINTS, FIND_IDS, buildSpec, stockTune, PATROL_SPEC } from './cars.js';
-import { buildTerrain, buildRoads, buildTrees, buildProps, buildSea, buildSky, buildFall, GROUND_FX, SKIES, buildSites, buildGarages, buildLines, makeBeam, buildCrates, buildBarn, buildRamps } from './scene.js';
+import { buildTerrain, buildRoads, buildTrees, buildProps, buildSea, buildSky, buildFall, GROUND_FX, SKIES, buildSites, buildGarages, buildLines, makeBeam, buildCrates, buildBarn, buildRamps, buildTraps } from './scene.js';
 import { buildCar, setCarEnv, SHADE } from './carmodel.js';
 import { Game, CARGO, RIVAL_SPEC } from './jobs.js';
 import { buildRaces, Race, MEDALS, PLACES, KID_LEVEL, spotsFor, rankKey, medals } from './race.js';
@@ -19,6 +19,7 @@ import { createTilt, createWake, buzz, canBuzz } from './phone.js';
 import { cupRound, cupTeams, newCup, scoreRound, cupTable, cupPlace, cupOver, purse, CUP_ROUNDS, CUP_NAME, CUP_CAR } from './cup.js';
 import { createUI, money, clock } from './ui.js';
 import { mapPoints, pickPoint, arrived, pixelToWorld, mapView } from './nav.js';
+import { DriftMeter, slideAngle, driftPay, trapPay, placeTraps, crossed, MPH, TRAP_MIN_MPH } from './stunts.js';
 import { REGIONS, REGION_IDS } from './regions.js';
 
 const $ = (id) => document.getElementById(id);
@@ -172,7 +173,9 @@ function start(hot) {
   const bh = barnHint(world, finds.barn);
   const findHints = () => ({ crates: `Crates show up on the map when you are near one. ${CRATES - popcount((S().stats[world.region] || {}).k || 0)} left here.`,
     barn: S().cars[finds.barn.car] ? `Found: the ${CARS[finds.barn.car].base.name}.` : `Look for an old shed about ${metric() ? bh.dist + ' m' : (Math.round(bh.dist * 3.28084 / 100) * 100).toLocaleString('en-US') + ' ft'} ${bh.dir} of ${bh.from}.`,
-    air: 'Hit one of the orange jump ramps on the map at full speed.' });
+    air: 'Hit one of the orange jump ramps on the map at full speed.',
+    drift: `Slide sideways at speed (the handbrake helps) and keep it going; the score grows the longer you hold it. Best here: ${((S().stats[world.region] || {}).f || 0).toLocaleString('en-US')}.`,
+    traps: 'The speed traps are the yellow dots on the map. Best here: ' + [0, 1, 2].map((i) => { const v = (S().stats[world.region] || {})['s' + i] || 0; return v ? (metric() ? Math.round(v / MPH * 3.6) + ' km/h' : v + ' mph') : 'none'; }).join(', ') + '.' });
   function findCheck() {            // driving over a crate picks it up; driving up to the shed claims the car
     const s = S(), R = world.region;
     for (const c of finds.crates) {
@@ -203,6 +206,23 @@ function start(hot) {
     ...Object.entries(spotsFor(world.region)).map(([spot, label]) => { const group = races.filter((d) => d.spot === spot), def = group[0]; return { kind: 'race', def, group, x: def.x, z: def.z, y: def.y, r: 8, label, beam: beam(0xa283ff, 8) }; }),
   ];
   for (const z of zones) z.beam.position.set(z.x, z.y, z.z);
+  // free-roam scoring: speed trap cameras on the fast stretches, and a drift meter
+  const traps = placeTraps(world, [...zones, ...world.places.sites, ...finds.ramps]); buildTraps(world, traps, scene);
+  const drift = new DriftMeter(); let trapPrev = null;
+  function stunts(dt) {
+    if (mode !== 'roam' || S().kid) { drift.reset(); trapPrev = null; return; }
+    const r = drift.step(dt, { speed: car.speed, angle: slideAngle(car.vel, car.fwd, car.left), grounded: car.grounded, impact: car.impact });
+    if (r && r.kind === 'paid') { S().cash += r.pay; const rec = best(S(), world.region, 'f', r.score); store.commit(); toast(`Drift ${r.score.toLocaleString('en-US')}. +${money(r.pay)}` + (rec && r.score >= 500 ? '. Your best here' : ''), 2); audio.chime([659, 988]); }
+    else if (r && r.kind === 'lost') toast(`Drift lost (${r.score.toLocaleString('en-US')})`, 1.4);
+    const px = car.pos.x, pz = car.pos.z;
+    if (trapPrev) for (const t of traps) if (crossed(t, trapPrev.x, trapPrev.z, px, pz)) {
+      const mph = Math.round(car.speed * MPH), sp = metric() ? Math.round(car.speed * 3.6) + ' km/h' : mph + ' mph', key = 's' + t.i, was = (S().stats[world.region] || {})[key] || 0;
+      if (mph < TRAP_MIN_MPH) { toast(`Speed trap: ${sp}. Go faster`, 1.6); continue; }
+      if (best(S(), world.region, key, mph)) { const pay = trapPay(mph) - trapPay(Math.max(was, TRAP_MIN_MPH)); S().cash += pay; store.commit(); toast(`Speed trap: ${sp}. New best! +${money(pay)}`, 2.4); audio.chime([784, 1047, 1319]); shake(30); }
+      else toast(`Speed trap: ${sp}. Best ${metric() ? Math.round(was / MPH * 3.6) + ' km/h' : was + ' mph'}`, 1.8);
+    }
+    trapPrev = { x: px, z: pz };
+  }
 
   // ---- dust ----
   const dustTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), r = g.createRadialGradient(32, 32, 2, 32, 32, 30); r.addColorStop(0, 'rgba(255,255,255,0.9)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
@@ -236,6 +256,7 @@ function start(hot) {
     g.setLineDash([]); g.strokeStyle = 'rgba(243,239,228,0.7)'; g.lineWidth = 2.5 * ls; g.beginPath(); g.moveTo(m - 9 * u, mz + 6 * u); g.lineTo(m - 2 * u, mz - 8 * u); g.lineTo(m + 3 * u, mz - u); g.lineTo(m + 6 * u, mz - 5 * u); g.lineTo(m + 12 * u, mz + 6 * u); g.stroke();
     g.strokeStyle = '#0e1114'; g.lineWidth = 2.5 * q;
     for (const r of finds.ramps) { const x = fx(r.x + r.fx * 8), y = fy(r.z + r.fz * 8), a = Math.atan2(-r.fx, -r.fz); g.save(); g.translate(x, y); g.rotate(-a + Math.PI); g.scale(q, q); g.lineWidth = 2.5; g.fillStyle = '#e0662a'; g.beginPath(); g.moveTo(0, -8); g.lineTo(7, 6); g.lineTo(-7, 6); g.closePath(); g.fill(); g.stroke(); g.restore(); }   // jump ramps
+    for (const t of traps) { const x = fx(t.x), y = fy(t.z); g.save(); g.translate(x, y); g.scale(q, q); g.lineWidth = 2; g.fillStyle = '#f2c230'; g.beginPath(); g.arc(0, 0, 4.5, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore(); }   // speed traps
     for (const z of zones) { const x = fx(z.x), y = fy(z.z); g.save(); g.translate(x, y); g.scale(q, q); g.lineWidth = 2.5; g.fillStyle = z.kind === 'garage' ? '#4f9dff' : '#a283ff'; g.beginPath(); if (z.kind === 'garage') g.rect(-7, -7, 14, 14); else { g.moveTo(0, -10); g.lineTo(9, 0); g.lineTo(0, 10); g.lineTo(-9, 0); g.closePath(); } g.fill(); g.stroke(); g.restore(); }
     return c;
   }
@@ -629,7 +650,7 @@ function start(hot) {
   // ---- HUD refs ----
   const el = { cash: $('cash'), job: $('job'), jobLabel: $('joblabel'), jobName: $('jobname'), jobDist: $('jobdist'), arrow: $('arrow'), time: $('jtime'), cond: $('jcond'), pay: $('jpay'), bust: $('bustfill'), bustRow: $('bustrow'),
     speed: $('speed'), unit: $('unit'), gear: $('gear'), rpm: $('rpmfill'), surf: $('surf'), alt: $('alt'),
-    race: $('racecard'), rarrow: $('rarrow'), rlabel: $('rlabel'), rtime: $('rtime'), rposLbl: $('rposlbl'), rposN: $('rposn'), rposD: $('rposd'), ptext: $('ptext'), pkey: $('pkey') };
+    race: $('racecard'), rarrow: $('rarrow'), rlabel: $('rlabel'), rtime: $('rtime'), rposLbl: $('rposlbl'), rposN: $('rposn'), rposD: $('rposd'), ptext: $('ptext'), pkey: $('pkey'), drift: $('drift') };
   let seaT = 0, kidUpT = 0, kidStuckT = 0, last = -1, acc = 0, upside = 0, hudT = 0, lastSurf = -1, airT = 0, thumpT = 0;
 
   // ---- adaptive quality: step detail down if the frame rate stays low ----
@@ -684,6 +705,7 @@ function start(hot) {
       if (car.impact > 6) hit(car.impact);
     }
     if (mode === 'roam') { game.update(dt); jobEvents(); if (mode === 'roam') zoneCheck(dt);
+      stunts(dt);
       if (nav && arrived(nav, car.pos.x, car.pos.z)) { toast(nav.kind === 'pin' ? 'You reached your marker' : 'You reached ' + nav.name, 2.4); nav = null; audio.click(); } }
     else if (mode === 'race' || mode === 'results') {
       race.update(dt); raceEvents();
@@ -827,6 +849,7 @@ function start(hot) {
     if (car.surf !== lastSurf) { lastSurf = car.surf; el.surf.textContent = RG.surfName[car.surf]; el.surf.dataset.s = car.surf; }
     el.alt.textContent = m ? Math.round(Math.max(0, car.pos.y + ALT0)) + ' m' : Math.round(Math.max(0, car.pos.y + ALT0) * 3.28084).toLocaleString('en-US') + ' ft';
     el.cash.textContent = money(S().cash);
+    { const on = mode === 'roam' && drift.on && drift.shown >= 60; el.drift.hidden = !on; if (on) el.drift.textContent = `Drift ${drift.shown.toLocaleString('en-US')}` + (drift.mult > 1 ? ` ×${drift.mult}` : ''); }
     if (showFps) $('fps').textContent = Math.round(fpsAvg) + ' fps · q' + quality;
     el.job.hidden = racing; el.race.hidden = !racing;
     const job = game.job;
@@ -868,7 +891,7 @@ function start(hot) {
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
-  window.__game = { mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
+  window.__game = { traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },
     get drawn() { const r = renderer.info.render; return { quality, locked, shadows: sun.castShadow, triangles: r.triangles, calls: r.calls, small: smallMeshes.reduce((n, m) => n + m.count, 0), smallShown: smallMeshes.reduce((n, m) => n + (m.visible ? m.count : 0), 0) }; },
     get ghost() { return ghost && { time: ghost.time, n: ghost.n, splits: ghost.splits.length, shown: !!ghostVis && ghostVis.car.visible, pos: ghostVis ? ghostVis.car.position.toArray().map(Math.round) : null }; },

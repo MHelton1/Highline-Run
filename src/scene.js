@@ -555,3 +555,14 @@ export function buildRamps(world, ramps, scene, RAMP) {
   }
   b.into(scene, true, false);
 }
+
+// speed trap cameras: a dark post beside the road with a yellow camera box looking along it, and a white line across
+export function buildTraps(world, traps, scene) {
+  const post = lam(0x2b2f34), yellow = lam(0xf2c230), dark = lam(0x14171a), white = lam(0xf3efe4), b = parts();
+  for (const t of traps) {
+    const yaw = Math.atan2(t.fx, t.fz), side = 7.2, x = t.x + t.fz * side, z = t.z - t.fx * side;
+    b.origin(x, world.sample(x, z), z, yaw); b.box(0.22, 4.4, 0.22, post, 0, 2.2, 0); b.box(0.75, 0.6, 1.0, yellow, -0.3, 4.2, 0); b.box(0.5, 0.36, 0.1, dark, -0.3, 4.2, 0.52); b.box(0.5, 0.36, 0.1, dark, -0.3, 4.2, -0.52);
+    for (let k = -4; k <= 4; k++) { const lx = t.x + t.fz * k * 0.9, lz = t.z - t.fx * k * 0.9; b.origin(lx, world.sample(lx, lz) + 0.035, lz, yaw); b.box(0.85, 0.02, 0.32, white, 0, 0, 0); }
+  }
+  b.into(scene, true, false);
+}

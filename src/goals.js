@@ -6,11 +6,12 @@ import { CAR_IDS, FIND_IDS } from './cars.js';
 import { CRATES, BARN_CAR, AIR_GOAL, popcount } from './finds.js';
 import { CUP_NAME } from './cup.js';
 import { eventsFor, LEVELS } from './race.js';
+import { DRIFT_GOAL, TRAP_GOAL_MPH, TRAPS } from './stunts.js';
 
 // counters kept per region: deliveries, hot deliveries, escapes with a hot load, rival beaten, fragile delivered
 // without a scratch, deliveries at night, whether the region has been visited, which hidden crates have been found
 // (one bit each) and the longest air time (tenths of a second)
-export const STAT_KEYS = ['d', 'h', 'e', 'r', 'c', 'n', 'v', 'k', 'a', 'b'];   // b: roadblocks got past
+export const STAT_KEYS = ['d', 'h', 'e', 'r', 'c', 'n', 'v', 'k', 'a', 'b', 'f', 's0', 's1', 's2'];   // b: roadblocks got past, f: best drift, s0-s2: best speed at each trap (mph)
 
 // the paint each region's goals unlock (index into PAINTS, see cars.js)
 export const REGION_PAINT = { mountain: 7, desert: 8, coast: 9 };
@@ -42,6 +43,8 @@ export function regionGoals(s, region) {
     g('crates', `Find all ${CRATES} hidden crates`, CRATES, popcount(n('k')), 3000),
     g('barn', 'Find the hidden car', 1, s.cars[BARN_CAR[region]] ? 1 : 0, 2500),
     g('air', `Stay in the air for ${AIR_GOAL} seconds`, 1, n('a') >= AIR_GOAL * 10 ? 1 : 0, 1500),
+    g('drift', `Score ${DRIFT_GOAL.toLocaleString('en-US')} in one drift`, 1, n('f') >= DRIFT_GOAL ? 1 : 0, 1500),
+    g('traps', `Pass all ${TRAPS} speed traps at ${TRAP_GOAL_MPH} mph or more`, TRAPS, [0, 1, 2].filter((i) => n('s' + i) >= TRAP_GOAL_MPH).length, 2000),
     g('cup', `Win the ${CUP_NAME[region] || 'cup'}`, 1, s.cups && s.cups[region] === 1 ? 1 : 0, 5000),
   ];
 }

@@ -277,6 +277,8 @@ body.kid #tg, body.kid #th { display: none; }
 body.photo .hud, body.photo #vig { display: none; }
 #shot { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: rgba(8, 10, 12, .72); padding: 16px; box-sizing: border-box; }
 #shot[hidden] { display: none; }
+#drift { position: absolute; left: 50%; top: 31%; transform: translateX(-50%); pointer-events: none; font: 700 clamp(22px, 4.6vw, 34px)/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #ffd36a; text-shadow: 0 2px 0 rgba(14,17,20,.6), 0 0 18px rgba(14,17,20,.45); white-space: nowrap; }
+#drift[hidden] { display: none; } body.menu #drift, body.photo #drift { display: none; }
 #mapbox { pointer-events: auto; cursor: pointer; }
 #bigmap { position: absolute; inset: 0; z-index: 7; display: grid; place-items: center; background: rgba(8, 10, 12, .62); padding: max(10px, env(safe-area-inset-top, 0px)) 12px max(10px, env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
 #bigmap[hidden] { display: none; }
@@ -318,6 +320,7 @@ body.bigmap .hud { visibility: hidden; }
     </div>
   </div>
   <div id="count" aria-hidden="true"></div>
+  <div id="drift" hidden aria-hidden="true"></div>
   <div id="touch">
     <div class="tb big" id="tl" data-t="left">◀</div><div class="tb big" id="tr" data-t="right">▶</div>
     <div class="tb big" id="tg" data-t="gas">GO</div><div class="tb big" id="tbk" data-t="brake">■</div>
@@ -355,7 +358,7 @@ body.bigmap .hud { visibility: hidden; }
   <div id="start">
     <div class="inner">
       <h1>Highline <em>Run</em></h1>
-      <p>Build 21. New: a big map. Tap the corner map (or press G) and tap any place to drop a marker the arrow will point you to. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
+      <p>Build 22. New: drift scoring and speed traps (yellow dots on the map) pay cash when you drive freely. Also new: a big map. Tap the corner map (or press G) to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
       <dl class="keys card desk">
         <dt>W A S D / arrows</dt><dd>Gas, steer, brake. Hold brake at a stop to reverse.</dd>
         <dt>Space</dt><dd>Handbrake for slides</dd>

@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 21
+# Highline Run: browser prototype, build 22
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -14,6 +14,7 @@ No rendering (run in plain node, so the tests can drive them):
 - `src/regions.js` the regions (mountain, desert, coast): names of roads and places, ground kind, trees, surface names
 
 - `src/nav.js` the big map's marker: which place a tap means (`pickPoint`), arrival, the map's view box
+- `src/stunts.js` free-roam scoring: `DriftMeter` (drift chains, multiplier, pay), speed trap spots (`placeTraps`) and crossing
 - `src/terrain.js` world data: heightfield, roads, surface grip table, ground queries, places (cargo sites, garages, race lines)
 - `src/vehicle.js` rigid-body car physics on the heightfield (120 Hz fixed step, gravity 13.2)
 - `src/cars.js` the car catalog (hatch, sprint, buggy, wagon, truck, coupe, trophy, apex; `CAR_IDS` is cheapest first), upgrades, tuning sliders, `buildSpec(id, up, tune)`, `measure()` and `rate()` for showroom numbers
@@ -81,6 +82,8 @@ Pictures for judging the look (not pass or fail):
     node tests/cupui.cjs [port|desk] [outdir]     # championship: Cup card, three rounds with points, resume, purse, prize car
     node tests/nav.mjs                            # marker snapping, arrival, map view box
     node tests/bigmapui.cjs [port|desk|land] [outdir]   # big map: open from the corner map, mark a garage, pin, arrive, clear
+    node tests/stunts.mjs [region]                # drift meter, trap pay, trap spots in the real world
+    node tests/stuntsui.cjs [desk|port] [outdir]  # speed traps pay a new best once, drift pays and shows on the dash, goals
     node tests/photoui.cjs [port|desk] [outdir]   # photo mode: dash hidden, drag to orbit, picture and download, back
     node tests/phoneui.cjs [port|land] [outdir]   # phone extras: tilt steering from the menu (fake tilt readings), buzz
     node tests/heatui.cjs [port|desk] [outdir]    # roadblock and backup on a hot run, getting past, clearing up
@@ -195,6 +198,11 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   view)` paints the still map at 720 px over the box `mapView` finds round the roads and places, and a tap sets `nav`
   (snapped to a garage, race start or cargo site within about 24 screen px). With no cargo on board the direction card
   points to the marker ("Your marker"), a pink light column stands on it, and driving within 24 m clears it.
+- Drifts and speed traps (build 22), free driving only, not in kid mode: `stunts(dt)` runs the `DriftMeter` (slide angle over
+  0.18 rad above 9 m/s; the multiplier rises every 1.6 s to x4; pays a quarter of the score when the slide ends, a crash
+  loses it) and clocks the car through 3 trap cameras per region (yellow dots on the maps). A new best pays $10 per mph
+  over 50, minus what the old best already paid. Saved per region in `stats`: `f` best drift, `s0`-`s2` trap bests (mph).
+  Two goals per region: a 2,000 drift and all three traps at 80 mph (60 goals in all).
 - Cargo rivals steer round a pickup's hut when their way in runs through it (the coast's huts sat on the line in).
 - Kid mode (`src/kid.js`, saved as `kid`): `kidInput()` replaces the pedals so the car drives itself at `KID` speeds
   (22 m/s tarmac, 16 dirt, 12 off road, less in turns); a held brake still stops and reverses. Cargo time x1.4, bust

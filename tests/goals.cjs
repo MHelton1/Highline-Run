@@ -30,11 +30,11 @@ const mode = process.argv[2] || 'port', OUT = process.argv[3] || path.join(__dir
   // the Goals page
   await p.evaluate(() => window.__game.pause()); await p.waitForTimeout(300);
   const label = await p.evaluate(() => document.getElementById('dlg-goals').textContent);
-  check('button', label === 'Goals 1/54', label);
+  check('button', label === 'Goals 1/60', label);
   await tap('#dlg-goals'); await p.waitForTimeout(400);
   const page = await p.evaluate((r) => ({ sets: [...document.querySelectorAll('.goalset h3')].map((h) => h.textContent), rows: document.querySelectorAll('.goals li').length,
     hot: document.getElementById('goal-' + r + '-hot').className, d3: document.getElementById('goal-' + r + '-d3').textContent }), region);
-  check('page', page.sets.length === 4 && page.sets[0].includes('(here)') && page.sets[0].includes('1 of 16') && page.rows === 54 && page.hot === 'done' && /1 \/ 3/.test(page.d3), page);
+  check('page', page.sets.length === 4 && page.sets[0].includes('(here)') && page.sets[0].includes('1 of 18') && page.rows === 60 && page.hot === 'done' && /1 \/ 3/.test(page.d3), page);
   await p.screenshot({ path: `${OUT}/goals-${mode}-page.png` });
   await p.evaluate(() => { document.querySelector('.goalset:last-of-type').scrollIntoView(); }); await p.waitForTimeout(200);
   await p.screenshot({ path: `${OUT}/goals-${mode}-page2.png` });

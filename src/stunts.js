@@ -2,7 +2,7 @@
 // A drift chain builds while the car slides sideways at speed and pays when it ends cleanly; a crash loses it.
 // Speed traps are cameras beside fast stretches of tarmac that clock the car as it passes; a new best pays.
 
-export const DRIFT = { minSpeed: 9, minAngle: 0.26, maxAngle: 1.45, grace: 0.7, step: 1.6, maxMult: 4, minScore: 150, crash: 5.5, payRate: 0.5 };
+export const DRIFT = { minSpeed: 9, minAngle: 0.18, maxAngle: 1.45, grace: 0.7, step: 1.6, maxMult: 4, minScore: 150, crash: 5.5, payRate: 0.25 };
 export const TRAPS = 3, TRAP_R = 11, TRAP_MIN_MPH = 50, TRAP_GOAL_MPH = 80, DRIFT_GOAL = 2000;
 export const MPH = 2.23694;
 
@@ -23,7 +23,7 @@ export class DriftMeter {
     if (sliding) {
       this.on = true; this.idle = 0; this.t += dt;
       this.mult = Math.min(DRIFT.maxMult, 1 + Math.floor(this.t / DRIFT.step));
-      this.score += dt * speed * Math.min(1, angle / 0.7) * 4;
+      this.score += dt * speed * Math.min(1, angle / 0.45) * 12;
       return null;
     }
     if (!this.on) return null;

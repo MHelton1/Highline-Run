@@ -15,6 +15,7 @@ const mode = process.argv[2] || 'port', OUT = process.argv[3] || path.join(__dir
   await p.waitForSelector('#go:not([hidden])', { timeout: 180000 });
   await tap('#go'); await p.evaluate(() => window.__game.pinQuality(2));
   const tick = (sec) => p.evaluate((sec) => { const g = window.__game; for (let i = 0; i < sec * 10; i++) g.tipTick(0.1); return g.tip; }, sec);
+  await p.waitForFunction(() => !document.getElementById('toast').classList.contains('show'), null, { timeout: 20000 }).catch(() => {});
   const t1 = await tick(12);
   check('first', /amber light/.test(t1 || ''), t1);
   await p.waitForTimeout(600); await p.screenshot({ path: path.join(OUT, `tip-${mode}.png`) });
@@ -23,20 +24,21 @@ const mode = process.argv[2] || 'port', OUT = process.argv[3] || path.join(__dir
   check('closed', closed === null, closed);
   const t2 = await tick(10);
   check('gap', t2 === null, t2);
-  const t3 = await tick(40);
-  check('second', /big map/.test(t3 || ''), t3);
+  const t3 = await tick(50);
+  check('second', !!t3 && t3 !== t1, t3);   // the next tip (here: the garage the car starts at)
   const seen = await p.evaluate(() => window.__game.store.data.tips.slice());
-  check('saved', Array.isArray(seen) && seen.includes('start') && seen.includes('map'), seen);
+  check('saved', Array.isArray(seen) && seen[0] === 'start' && seen.length === 2, seen);
   // switch off from the menu
   await tap('#menubtn'); await p.waitForTimeout(400);
   const lbl = await p.evaluate(() => document.getElementById('dlg-tips').textContent);
   await tap('#dlg-tips'); await p.waitForTimeout(300);
   const lbl2 = await p.evaluate(() => document.getElementById('dlg-tips').textContent);
   await tap('#dlg-go'); await p.waitForTimeout(300);
-  const t4 = await tick(60);
+  const t4 = await tick(120);
   check('off', lbl === 'Tips on' && lbl2 === 'Tips off' && t4 === null, { lbl, lbl2, t4 });
   // back on: they start again from the top
   await tap('#menubtn'); await p.waitForTimeout(400); await tap('#dlg-tips'); await p.waitForTimeout(300); await tap('#dlg-go'); await p.waitForTimeout(300);
+  await p.waitForFunction(() => !document.getElementById('toast').classList.contains('show'), null, { timeout: 20000 }).catch(() => {});
   const t5 = await tick(12);
   check('reset', /amber light/.test(t5 || ''), t5);
   check('errors', errs.length === 0, errs.slice(0, 5));

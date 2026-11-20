@@ -19,7 +19,7 @@ import { createTilt, createWake, buzz, canBuzz } from './phone.js';
 import { cupRound, cupTeams, newCup, scoreRound, cupTable, cupPlace, cupOver, purse, CUP_ROUNDS, CUP_NAME, CUP_CAR } from './cup.js';
 import { createUI, money, clock } from './ui.js';
 import { mapPoints, pickPoint, arrived, pixelToWorld, mapView } from './nav.js';
-import { nextTip, skipped, TIP_SHOW } from './tips.js';
+import { nextTip, skipped, TIP_SHOW, TIP_GAP } from './tips.js';
 import { createSkids } from './skids.js';
 import { dayKey, rollDaily, dailyEvent, dailyProgress, streakPay } from './daily.js';
 import { DriftMeter, slideAngle, driftPay, trapPay, placeTraps, crossed, MPH, TRAP_MIN_MPH, NitroTank, NITRO } from './stunts.js';
@@ -209,7 +209,7 @@ function start(hot) {
     }
   }
   // ---- tips for new players: one short hint at a time, each shown once (Tips in the menu turns them off or back on) ----
-  let tipSince = 15, tipUp = 0, tipCheck = 0, driveT = 0, stuckT = 0;
+  let tipSince = TIP_GAP - 8, tipUp = 0, tipCheck = 0, driveT = 0, stuckT = 0;   // the first tip comes after about 8 s of driving
   const tipEl = $('tip');
   function tipContext() {
     const s = S(); let near = null, nd = 60;
@@ -222,7 +222,7 @@ function start(hot) {
     driveT += dt; tipSince += dt;
     stuckT = input.throttle > 0.5 && car.speed < 1.5 ? stuckT + dt : 0;
     if (tipUp > 0) { tipUp -= dt; if (tipUp <= 0) hideTip(); return; }
-    if ((tipCheck -= dt) > 0 || !S().tipsOn || race) return;
+    if ((tipCheck -= dt) > 0 || !S().tipsOn || race || toastT > 0) return;   // never on top of a message
     tipCheck = 0.5;
     const c = tipContext(), s = S(), old = skipped(c, s.tips);
     if (old.length) { s.tips.push(...old); store.commit(); }
@@ -276,10 +276,38 @@ function start(hot) {
   const dust = Array.from({ length: coarse ? 90 : 140 }, () => { const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: dustTex, transparent: true, depthWrite: false, opacity: 0 })); s.visible = false; s.userData = { life: 0, max: 1, vy: 0 }; scene.add(s); return s; });
   let dustI = 0;
   const DUST_COL = SK.dust;
-  function puff(p, surf, big) { const s = dust[dustI = (dustI + 1) % dust.length]; s.position.copy(p); s.position.y += 0.25; s.material.color.setHex(DUST_COL[surf]); s.userData.life = s.userData.max = 0.7 + Math.random() * 0.7; s.userData.size = big; s.userData.vy = 0.6 + Math.random(); s.visible = true; }
-  function trail(c, dt, rate) {    // dust and tyre smoke behind one car
-    c.dustAcc = (c.dustAcc || 0) + dt * Math.min(1, c.speed / 12) * rate;
-    while (c.dustAcc > 1) { c.dustAcc -= 1; const w = c.wheels[2 + (Math.random() * 2 | 0)]; if (!w.onGround) continue; const loose = w.surf !== SURF.ASPHALT; if ((loose && c.speed > 4) || w.slip > 0.5) puff(w.hit, w.surf, loose ? 1 : 0.6); }
+  // What the wheels throw up follows the weather: dust when dry; in rain, clumps of mud off loose ground and a mist of
+  // spray off wet tarmac; in snow, white powder off everything (slush on the roads).
+  const MUD_COL = [0x3a3734, 0x2f2116, 0x2a2715, 0x3b3226, 0xe9eef3], SNOW_COL = [0xd5dbe0, 0xf1f4f7, 0xeef2f5, 0xeef2f5, 0xf4f7fa];
+  const wetNow = () => WX.cur.rain || 0, snowNow = () => Math.min(1, (WX.cur.ground || 0) / 0.6);
+  const mudTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'); g.fillStyle = '#fff';   // a wet clump: a hard-edged blob with a few drops
+    g.beginPath(); for (let i = 0; i <= 12; i++) { const a = i / 12 * Math.PI * 2, r = 15 + (i % 3) * 4 + (i % 2) * 3; g.lineTo(32 + Math.cos(a) * r, 32 + Math.sin(a) * r); } g.fill();
+    for (const [x, y, r] of [[10, 14, 4], [54, 20, 3], [50, 52, 4], [14, 50, 3]]) { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); } return new THREE.CanvasTexture(c); })();
+  function spawn() { const s = dust[dustI = (dustI + 1) % dust.length]; s.userData.vx = s.userData.vz = 0; s.userData.g = 0; s.userData.kind = 'dust'; s.userData.alpha = 0.42; s.userData.grow = 4.5; s.material.map = dustTex; return s; }
+  function puff(p, surf, big) { const s = spawn(); s.position.copy(p); s.position.y += 0.25; s.material.color.setHex(DUST_COL[surf]); s.userData.life = s.userData.max = 0.7 + Math.random() * 0.7; s.userData.size = big; s.userData.vy = 0.6 + Math.random(); s.visible = true; }
+  function mud(p, c, surf) {        // a clump flung up and back off the tyre, falling under its own weight
+    const s = spawn(), u = s.userData; s.material.map = mudTex; s.position.copy(p); s.position.y += 0.2; s.material.color.setHex(MUD_COL[surf]);
+    u.kind = 'mud'; u.life = u.max = 0.5 + Math.random() * 0.4; u.size = 0.35 + Math.random() * 0.3; u.grow = 0.5; u.alpha = 1; u.g = 10;
+    const side = (Math.random() - 0.5) * 3; u.vx = c.vel.x * 0.72 - c.fwd.x * 1.5 + c.left.x * side; u.vz = c.vel.z * 0.72 - c.fwd.z * 1.5 + c.left.z * side; u.vy = 3 + Math.random() * 2.5; s.visible = true;
+  }
+  function spray(p, c, col, size, alpha) {   // fine water or snow thrown up behind the car, hanging in the air
+    const s = spawn(), u = s.userData; s.position.copy(p); s.position.y += 0.3; s.material.color.setHex(col);
+    u.kind = 'spray'; u.life = u.max = 0.5 + Math.random() * 0.5; u.size = size; u.grow = 3.2; u.alpha = alpha; u.g = 1.5;
+    u.vx = c.vel.x * 0.55 + (Math.random() - 0.5) * 2; u.vz = c.vel.z * 0.55 + (Math.random() - 0.5) * 2; u.vy = 0.8 + Math.random() * 1.2; s.visible = true;
+  }
+  function trail(c, dt, rate) {    // dust, mud, spray, snow and tyre smoke behind one car
+    const wet = wetNow(), snow = snowNow();
+    c.dustAcc = (c.dustAcc || 0) + dt * Math.min(1, c.speed / 12) * rate * (wet > 0.3 || snow > 0.3 ? 1.4 : 1);
+    while (c.dustAcc > 1) {
+      c.dustAcc -= 1; const w = c.wheels[2 + (Math.random() * 2 | 0)]; if (!w.onGround) continue; const loose = w.surf !== SURF.ASPHALT;
+      if (snow > 0.3 && Math.random() < snow) { if (c.speed > 4 || w.slip > 0.4) spray(w.hit, c, SNOW_COL[w.surf], loose ? 1 : 0.8, loose ? 0.6 : 0.4); continue; }
+      if (wet > 0.3 && Math.random() < wet) {
+        if (loose && w.surf !== SURF.SNOW) { if (c.speed > 3 || w.slip > 0.4) { mud(w.hit, c, w.surf); if (Math.random() < 0.5) spray(w.hit, c, MUD_COL[w.surf], 0.9, 0.35); } }
+        else if (c.speed > 8) spray(w.hit, c, 0xdde4ea, 0.9, 0.3);
+        continue;
+      }
+      if ((loose && c.speed > 4) || w.slip > 0.5) puff(w.hit, w.surf, loose ? 1 : 0.6);
+    }
   }
 
   // ---- minimap: north (+z) is up, which puts +x on the left, as in a true view from above ----
@@ -610,7 +638,7 @@ function start(hot) {
     toggleUnits: setUnits, toggleMute: setMute, toggleMusic: setMusic, nextWeather: () => { setWeather(WEATHER_MODES[(WEATHER_MODES.indexOf(S().weather) + 1) % WEATHER_MODES.length]); store.commit(); }, ghostTime, setGhost: (on) => { S().ghost = on; store.commit(); }, nextTime: () => { setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); }, toggleFps: () => { showFps = !showFps; if (!showFps) $('fps').textContent = ''; },
     findHints, findCars: () => FIND_IDS, showNitro,
     toggleTilt: () => setTilt(!S().tilt).then(() => { if (paused) ui.pause(); }), toggleBuzz: () => { S().buzz = !S().buzz; store.commit(); if (S().buzz) buzz(40); },
-    photo: openPhoto, map: openMap, dailyInfo, tipsOn: () => S().tipsOn, toggleTips: () => { const s = S(); s.tipsOn = !s.tipsOn; if (s.tipsOn) { s.tips = []; tipSince = 15; } else hideTip(); store.commit(); },
+    photo: openPhoto, map: openMap, dailyInfo, tipsOn: () => S().tipsOn, toggleTips: () => { const s = S(); s.tipsOn = !s.tipsOn; if (s.tipsOn) { s.tips = []; tipSince = TIP_GAP - 8; } else hideTip(); store.commit(); },
     testCash: () => { S().cash += 10000; store.commit(); audio.buy(); }, resetProgress,
   });
   titleInfo();
@@ -854,7 +882,8 @@ function start(hot) {
     });
     // dust
     if (live) { trail(car, dt, 40); if (mode === 'race') for (const r of race.rivals) trail(r.car, dt, 16); }
-    for (const d of dust) { if (!d.visible) continue; const u = d.userData; if (!paused) u.life -= dt; if (u.life <= 0) { d.visible = false; continue; } const t = 1 - u.life / u.max; if (!paused) d.position.y += u.vy * dt; const sc = (0.8 + t * 4.5) * u.size; d.scale.set(sc, sc, 1); d.material.opacity = 0.42 * (1 - t) * Math.min(1, t * 8); }
+    for (const d of dust) { if (!d.visible) continue; const u = d.userData; if (!paused) u.life -= dt; if (u.life <= 0) { d.visible = false; continue; } const t = 1 - u.life / u.max; if (!paused) { u.vy -= (u.g || 0) * dt; d.position.x += (u.vx || 0) * dt; d.position.y += u.vy * dt; d.position.z += (u.vz || 0) * dt;
+      if (u.kind === 'mud' && u.vy < 0) { const gy = world.sample(d.position.x, d.position.z) + 0.12; if (d.position.y < gy) { d.position.y = gy; u.vx = u.vz = u.vy = 0; u.g = 0; } } }   /* mud lands and stays on the ground */ const sc = (0.8 + t * (u.grow ?? 4.5)) * u.size; d.scale.set(sc, sc, 1); d.material.opacity = (u.alpha ?? 0.42) * (u.kind === 'mud' ? 1 - t * t : 1 - t) * Math.min(1, t * (u.kind === 'mud' ? 30 : 8)); }
 
     updateCamera(dt);
     for (const m of smallMeshes) m.visible = quality < 4 && camera.position.distanceTo(m.boundingSphere.center) < m.boundingSphere.radius + SMALL_FAR;   // bushes and stones: nearby blocks only
@@ -943,7 +972,7 @@ function start(hot) {
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
-  window.__game = { daily, dailyInfo, skids, get flames() { return flames.map((f) => f.visible); }, tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
+  window.__game = { get dustKinds() { const k = {}; for (const d of dust) if (d.visible) k[d.userData.kind] = (k[d.userData.kind] || 0) + 1; return k; }, daily, dailyInfo, skids, get flames() { return flames.map((f) => f.visible); }, tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },
     get drawn() { const r = renderer.info.render; return { quality, locked, shadows: sun.castShadow, triangles: r.triangles, calls: r.calls, small: smallMeshes.reduce((n, m) => n + m.count, 0), smallShown: smallMeshes.reduce((n, m) => n + (m.visible ? m.count : 0), 0) }; },
     get ghost() { return ghost && { time: ghost.time, n: ghost.n, splits: ghost.splits.length, shown: !!ghostVis && ghostVis.car.visible, pos: ghostVis ? ghostVis.car.position.toArray().map(Math.round) : null }; },

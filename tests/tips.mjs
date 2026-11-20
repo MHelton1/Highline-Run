@@ -7,6 +7,7 @@ const seen = [];
 assert.equal(nextTip({ ...base, t: 2 }, seen, 99), null, 'not in the first seconds');
 let t = nextTip({ ...base, t: 5 }, seen, 99); assert.equal(t.id, 'start'); seen.push(t.id);
 assert.equal(nextTip({ ...base, t: 10, job: true }, seen, TIP_GAP - 1), null, 'spaced out');
+assert.equal(nextTip({ ...base, t: 40, job: true }, seen, 30), null, 'at most one a minute');
 t = nextTip({ ...base, t: 40, job: true }, seen, TIP_GAP); assert.equal(t.id, 'load'); seen.push(t.id);
 t = nextTip({ ...base, t: 60, near: 'garage' }, seen, 99); assert.equal(t.id, 'garage'); seen.push(t.id);
 t = nextTip({ ...base, t: 70 }, seen, 99); assert.equal(t.id, 'map'); seen.push(t.id);

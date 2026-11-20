@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 25
+# Highline Run: browser prototype, build 26
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -214,7 +214,7 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   `src/stunts.js`: 3.5 s of burn, refilled by drifts (score/1500), air time (0.3 per second) and driving over 15 m/s
   (1/70 per second); once empty the button must be let go. While on, `car.step` gets `boost` (6.5 m/s² forward push,
   grounded and in a forward gear) and the view widens 7°. Shift or B, LB on a controller, NOS on touch. Free driving only.
-- Tips (build 24): `tipTick` (free driving only) checks every half second; a tip shows for 9 s in `#tip` (tap to close)
+- Tips (build 24): `tipTick` (free driving only) checks every half second; a tip shows for up to 20 s in `#tip` (tap to close)
   and its id goes into `tips` in the save. Saves that have clearly done the basics (deliveries, cars, races, goals) mark
   those tips seen without showing them. Menu "Tips on/off"; switching back on starts the list again.
 - Daily challenge (build 25): one task a day (deliveries, a Hot load, a drift score, a speed trap, air time or a race
@@ -223,6 +223,10 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   as `daily` { day, region, have, done, streak, last }; one per day even after travelling. Shown at the top of the menu.
 - Tyre marks (`src/skids.js`) from the player's rear wheels when sliding (slip over 0.32, or the handbrake above 6 m/s);
   nitro flames (two blue cones on the car) and a rush of wind in the sound while nitro burns.
+- Weather spray (build 26, Michael asked 2026-11-20): `trail()` picks by weather. Rain (`WX.cur.rain` > 0.3): clumps of
+  mud (`mud()`, hard-edged `mudTex`, thrown up and back, land and stay on the ground) off loose surfaces, and a light
+  mist (`spray()`) off wet tarmac at speed. Snow (`WX.cur.ground`): white powder, grey slush on tarmac. Dry: dust as
+  before. Tips: `TIP_GAP` 60 s (at most one a minute), `TIP_SHOW` 20 s, and never while a message is showing.
 - Cargo rivals steer round a pickup's hut when their way in runs through it (the coast's huts sat on the line in).
 - Kid mode (`src/kid.js`, saved as `kid`): `kidInput()` replaces the pedals so the car drives itself at `KID` speeds
   (22 m/s tarmac, 16 dirt, 12 off road, less in turns); a held brake still stops and reverses. Cargo time x1.4, bust

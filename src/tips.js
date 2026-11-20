@@ -1,8 +1,8 @@
 // Tips for new players: short hints shown once each, when they first matter. No rendering (runs in node for tests).
 // Each tip has a test on what is going on now (c, see tipContext in main.js) and, for players who have clearly done
 // the thing already, a skip test so an old save is not told the basics.
-export const TIP_GAP = 25;        // seconds between two tips
-export const TIP_SHOW = 9;        // seconds a tip stays up
+export const TIP_GAP = 60;        // seconds from one tip to the next: at most one a minute (Michael, 2026-11-20)
+export const TIP_SHOW = 20;       // seconds a tip stays up (a tap closes it sooner)
 
 export const TIPS = [
   { id: 'start', when: (c) => c.t > 3 && !c.job, skip: (c) => c.delivered > 0,
@@ -30,7 +30,7 @@ export const TIPS = [
 ];
 export const TIP_IDS = TIPS.map((t) => t.id);
 
-// the tip to show now, or null: one at a time, at least TIP_GAP seconds apart, each once
+// the tip to show now, or null: one at a time, at most one a minute, each once
 export function nextTip(c, seen, since) {
   if (since < TIP_GAP) return null;
   for (const t of TIPS) if (!seen.includes(t.id) && !t.skip(c) && t.when(c)) return t;

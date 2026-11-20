@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 24
+# Highline Run: browser prototype, build 25
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -16,6 +16,7 @@ No rendering (run in plain node, so the tests can drive them):
 - `src/nav.js` the big map's marker: which place a tap means (`pickPoint`), arrival, the map's view box
 - `src/stunts.js` free-roam scoring: `DriftMeter` (drift chains, multiplier, pay), speed trap spots (`placeTraps`) and crossing
 - `src/tips.js` tips for new players: each tip's trigger and skip test, `nextTip` (one at a time, 25 s apart, once each)
+- `src/daily.js` the daily challenge: today's task per date and region (`dailyFor`), progress, streak pay, save cleaning
 - `src/terrain.js` world data: heightfield, roads, surface grip table, ground queries, places (cargo sites, garages, race lines)
 - `src/vehicle.js` rigid-body car physics on the heightfield (120 Hz fixed step, gravity 13.2)
 - `src/cars.js` the car catalog (hatch, sprint, buggy, wagon, truck, coupe, trophy, apex; `CAR_IDS` is cheapest first), upgrades, tuning sliders, `buildSpec(id, up, tune)`, `measure()` and `rate()` for showroom numbers
@@ -88,6 +89,8 @@ Pictures for judging the look (not pass or fail):
     node tests/nitroui.cjs [port|desk] [outdir]   # nitro: buy in Parts, NOS control and tank shown, faster run, touch, not in races
     node tests/tips.mjs                           # tip order, spacing, old saves skip the basics, save cleaning
     node tests/tipsui.cjs [port|desk|land] [outdir]   # first tip, tap to close, gap, menu switch off and back on
+    node tests/daily.mjs                          # daily task per date, progress, streaks, travel, save cleaning
+    node tests/dailyui.cjs [port|desk] [outdir]   # menu card, doing it pays once with news, done state, tyre marks
     node tests/photoui.cjs [port|desk] [outdir]   # photo mode: dash hidden, drag to orbit, picture and download, back
     node tests/phoneui.cjs [port|land] [outdir]   # phone extras: tilt steering from the menu (fake tilt readings), buzz
     node tests/heatui.cjs [port|desk] [outdir]    # roadblock and backup on a hot run, getting past, clearing up
@@ -214,6 +217,12 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
 - Tips (build 24): `tipTick` (free driving only) checks every half second; a tip shows for 9 s in `#tip` (tap to close)
   and its id goes into `tips` in the save. Saves that have clearly done the basics (deliveries, cars, races, goals) mark
   those tips seen without showing them. Menu "Tips on/off"; switching back on starts the list again.
+- Daily challenge (build 25): one task a day (deliveries, a Hot load, a drift score, a speed trap, air time or a race
+  place), picked from a hash of the local date and region, so everyone gets the same one. `daily(kind, value)` is called
+  from deliveries, drifts, traps, landings and race finishes. $3,000, plus $500 per day of streak (up to +$3,000). Saved
+  as `daily` { day, region, have, done, streak, last }; one per day even after travelling. Shown at the top of the menu.
+- Tyre marks (`src/skids.js`) from the player's rear wheels when sliding (slip over 0.32, or the handbrake above 6 m/s);
+  nitro flames (two blue cones on the car) and a rush of wind in the sound while nitro burns.
 - Cargo rivals steer round a pickup's hut when their way in runs through it (the coast's huts sat on the line in).
 - Kid mode (`src/kid.js`, saved as `kid`): `kidInput()` replaces the pedals so the car drives itself at `KID` speeds
   (22 m/s tarmac, 16 dirt, 12 off road, less in turns); a held brake still stops and reverses. Cargo time x1.4, bust

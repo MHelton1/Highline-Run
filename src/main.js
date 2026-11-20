@@ -20,6 +20,8 @@ import { cupRound, cupTeams, newCup, scoreRound, cupTable, cupPlace, cupOver, pu
 import { createUI, money, clock } from './ui.js';
 import { mapPoints, pickPoint, arrived, pixelToWorld, mapView } from './nav.js';
 import { nextTip, skipped, TIP_SHOW } from './tips.js';
+import { createSkids } from './skids.js';
+import { dayKey, rollDaily, dailyEvent, dailyProgress, streakPay } from './daily.js';
 import { DriftMeter, slideAngle, driftPay, trapPay, placeTraps, crossed, MPH, TRAP_MIN_MPH, NitroTank, NITRO } from './stunts.js';
 import { REGIONS, REGION_IDS } from './regions.js';
 
@@ -125,6 +127,14 @@ function start(hot) {
   }
   // ---- goals: checked once a second; rewards are paid at once, the news waits until the toast line is free ----
   const goalNews = []; let goalT = 0;
+  // ---- the daily challenge (same for everyone on a date; the streak grows the reward) ----
+  const today = () => rollDaily(S().daily, dayKey(), world.region);
+  function daily(kind, value) {
+    const rec = S().daily, ch = today(), had = rec.have, pay = dailyEvent(rec, ch, kind, value);
+    if (pay) { S().cash += pay; goalNews.push(`Daily challenge done! +${money(pay)}` + (rec.streak > 1 ? `. ${rec.streak} days in a row` : '')); store.commit(); }
+    else if (rec.have !== had) store.commit();
+  }
+  const dailyInfo = () => { const ch = today(), rec = S().daily; return { text: ch.text, progress: dailyProgress(rec, ch), pay: streakPay(rec.last === rec.day ? rec.streak : (rec.last && (Date.parse(rec.day) - Date.parse(rec.last)) === 864e5 ? rec.streak + 1 : 1)), streak: rec.streak, done: rec.last === rec.day }; };
   function checkGoals(dt) {
     if ((goalT -= dt) > 0) return; goalT = 1;
     if (mode !== 'roam' && mode !== 'garage' && mode !== 'results') return;
@@ -135,10 +145,18 @@ function start(hot) {
   const setTime = (tod) => { S().tod = DAY.tod = tod; DAY.t = 0; if (tod !== 'day') makeHeadlight(); applyLook(hourFor(tod, 0), true); };
   const car = new Vehicle(world, specOf(S().car));
   let vis = null, shownId = null, garageAt = garages[S().at] || garages[0], camSnap = false;
+  // nitro flames: two soft blue cones out of the back of the player's car, shown while the nitro burns
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0x3f9dff, transparent: true, opacity: 0.85, depthWrite: false }), coreMat = new THREE.MeshBasicMaterial({ color: 0xe8f6ff, transparent: true, opacity: 0.9, depthWrite: false });
+  const flameGeo = new THREE.ConeGeometry(0.13, 0.8, 10, 1, true); flameGeo.rotateX(-Math.PI / 2); flameGeo.translate(0, 0, -0.4);
+  const coreGeo = new THREE.ConeGeometry(0.06, 0.4, 8, 1, true); coreGeo.rotateX(-Math.PI / 2); coreGeo.translate(0, 0, -0.2);
+  let flames = [];
   function dress(id) {            // build the model for the car the player is in (or looking at in the garage)
     if (vis) { scene.remove(vis.car); vis.dispose(); }
     vis = buildCar(car.spec, { paint: paintOf(id) }); scene.add(vis.car); shownId = id; audio.setCar(CARS[id].sound);
+    vis.car.updateMatrixWorld(true); const box = new THREE.Box3().setFromObject(vis.car);
+    flames = [-1, 1].map((sx) => { const f = new THREE.Mesh(flameGeo, flameMat); f.add(new THREE.Mesh(coreGeo, coreMat)); f.position.set(sx * Math.min(0.34, box.max.x * 0.4), box.min.y + 0.28, box.min.z + 0.02); f.visible = false; vis.car.add(f); return f; });
   }
+  const skids = createSkids(scene);
   // Put car `id` on the garage floor. numbersOnly: same car, only its parts or settings changed, so it stays where it is.
   function showCar(id, numbersOnly) {
     car.applySpec(specOf(id));
@@ -215,6 +233,7 @@ function start(hot) {
   tipEl.addEventListener('click', () => { hideTip(); if (driving()) canvas.focus(); });
   function landed(t) {              // back on the ground after a jump: long air pays outside races
     if (mode === 'roam' && S().nitro) nitro.add(t * NITRO.perAir);
+    if (mode === 'roam') daily('air', Math.floor(t * 10) / 10);
     if (mode === 'roam' && t >= AIR_MIN) {
       const pay = airPay(t), rec = best(S(), world.region, 'a', Math.floor(t * 10)); S().cash += pay; store.commit();
       shake(40); toast(`Air time ${t.toFixed(1)} s. +${money(pay)}` + (rec && t >= 1.5 ? '. Your longest here' : ''), 2); audio.chime([784, 1175]);
@@ -239,11 +258,12 @@ function start(hot) {
   function stunts(dt) {
     if (mode !== 'roam' || S().kid) { drift.reset(); trapPrev = null; return; }
     const r = drift.step(dt, { speed: car.speed, angle: slideAngle(car.vel, car.fwd, car.left), grounded: car.grounded, impact: car.impact });
-    if (r && r.kind === 'paid') { if (S().nitro) nitro.add(r.score * NITRO.perDrift); S().cash += r.pay; const rec = best(S(), world.region, 'f', r.score); store.commit(); toast(`Drift ${r.score.toLocaleString('en-US')}. +${money(r.pay)}` + (rec && r.score >= 500 ? '. Your best here' : ''), 2); audio.chime([659, 988]); }
+    if (r && r.kind === 'paid') { daily('drift', r.score); if (S().nitro) nitro.add(r.score * NITRO.perDrift); S().cash += r.pay; const rec = best(S(), world.region, 'f', r.score); store.commit(); toast(`Drift ${r.score.toLocaleString('en-US')}. +${money(r.pay)}` + (rec && r.score >= 500 ? '. Your best here' : ''), 2); audio.chime([659, 988]); }
     else if (r && r.kind === 'lost') toast(`Drift lost (${r.score.toLocaleString('en-US')})`, 1.4);
     const px = car.pos.x, pz = car.pos.z;
     if (trapPrev) for (const t of traps) if (crossed(t, trapPrev.x, trapPrev.z, px, pz)) {
       const mph = Math.round(car.speed * MPH), sp = metric() ? Math.round(car.speed * 3.6) + ' km/h' : mph + ' mph', key = 's' + t.i, was = (S().stats[world.region] || {})[key] || 0;
+      daily('trap', mph);
       if (mph < TRAP_MIN_MPH) { toast(`Speed trap: ${sp}. Go faster`, 1.6); continue; }
       if (best(S(), world.region, key, mph)) { const pay = trapPay(mph) - trapPay(Math.max(was, TRAP_MIN_MPH)); S().cash += pay; store.commit(); toast(`Speed trap: ${sp}. New best! +${money(pay)}`, 2.4); audio.chime([784, 1047, 1319]); shake(30); }
       else toast(`Speed trap: ${sp}. Best ${metric() ? Math.round(was / MPH * 3.6) + ' km/h' : was + ' mph'}`, 1.8);
@@ -399,6 +419,7 @@ function start(hot) {
         if (ghost) { const d = e.time - ghost.time; raceNote.ghost = d < 0 ? `You beat your ghost by ${(-d).toFixed(1)} s. This run is your new ghost.` : `Your ghost was ${d.toFixed(1)} s quicker.`; }
         if (rec && (raceNote.best || !loadGhost(def.id))) { if (saveGhost(def.id, encodeGhost(rec, e.time)) && !ghost) raceNote.ghost = 'Ghost saved: race this event again to chase it.'; }
         if (rank && (!s.rank[rk] || rank < s.rank[rk])) s.rank[rk] = rank;
+        if (rank) daily('race', rank);
         s.cash += e.prize; if (def.cup) cupScore(def, e); store.commit();
         audio.chime(won ? [523, 659, 784, 1047, 1319] : rank ? [523, 659, 784] : [392, 330]);
         toast(road ? `Finished ${PLACES[e.pos - 1]}` : e.medal >= 0 ? `${MEDALS[e.medal]} medal` : 'Finished', 2.4);
@@ -589,7 +610,7 @@ function start(hot) {
     toggleUnits: setUnits, toggleMute: setMute, toggleMusic: setMusic, nextWeather: () => { setWeather(WEATHER_MODES[(WEATHER_MODES.indexOf(S().weather) + 1) % WEATHER_MODES.length]); store.commit(); }, ghostTime, setGhost: (on) => { S().ghost = on; store.commit(); }, nextTime: () => { setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); }, toggleFps: () => { showFps = !showFps; if (!showFps) $('fps').textContent = ''; },
     findHints, findCars: () => FIND_IDS, showNitro,
     toggleTilt: () => setTilt(!S().tilt).then(() => { if (paused) ui.pause(); }), toggleBuzz: () => { S().buzz = !S().buzz; store.commit(); if (S().buzz) buzz(40); },
-    photo: openPhoto, map: openMap, tipsOn: () => S().tipsOn, toggleTips: () => { const s = S(); s.tipsOn = !s.tipsOn; if (s.tipsOn) { s.tips = []; tipSince = 15; } else hideTip(); store.commit(); },
+    photo: openPhoto, map: openMap, dailyInfo, tipsOn: () => S().tipsOn, toggleTips: () => { const s = S(); s.tipsOn = !s.tipsOn; if (s.tipsOn) { s.tips = []; tipSince = 15; } else hideTip(); store.commit(); },
     testCash: () => { S().cash += 10000; store.commit(); audio.buy(); }, resetProgress,
   });
   titleInfo();
@@ -726,9 +747,9 @@ function start(hot) {
     acc += dt; thumpT -= dt; if (mode !== 'roam') nitro.on = false;
     while (acc >= STEP) {
       acc -= STEP;
-      if (mode === 'roam') { const nos = nitro.step(STEP, inp.nitro, nitroOk(), car.speed); car.step(STEP, nos ? { ...inp, boost: NITRO.acc } : inp); game.step(STEP); if (game.rammed > 3) { hit(game.rammed + 4); game.rammed = 0; } }
+      if (mode === 'roam') { const nos = nitro.step(STEP, inp.nitro, nitroOk(), car.speed); car.step(STEP, nos ? { ...inp, boost: NITRO.acc } : inp); skids.car(car, 'p', inp.handbrake); game.step(STEP); if (game.rammed > 3) { hit(game.rammed + 4); game.rammed = 0; } }
       else if (mode === 'garage') car.step(STEP, HOLD);
-      else { car.step(STEP, race.input(inp)); race.step(STEP); if (rec && race.state === 'run') rec.sample(race.clock, car.pos, car.quat); if (race.bump > 3) { hit(race.bump + 4); race.bump = 0; } }
+      else { car.step(STEP, race.input(inp)); skids.car(car, 'p', inp.handbrake); race.step(STEP); if (rec && race.state === 'run') rec.sample(race.clock, car.pos, car.quat); if (race.bump > 3) { hit(race.bump + 4); race.bump = 0; } }
       if (car.impact > 6) hit(car.impact);
     }
     if (mode === 'roam') { game.update(dt); jobEvents(); if (mode === 'roam') zoneCheck(dt);
@@ -756,7 +777,7 @@ function start(hot) {
   function jobEvents() {
     for (const e of game.events.splice(0)) {
       if (e.type === 'pickup') { const K = CARGO[e.job.kind]; toast(e.job.kind === 'freight' ? `Cargo loaded. ${e.job.to.name}, ${money(e.job.pay)}` : `${K.name} load for ${e.job.to.name}, ${money(e.job.pay)}. ${K.note}`, e.job.kind === 'freight' ? 3.2 : 4.5); audio.chime([523, 784]); }
-      else if (e.type === 'delivered') { const R = world.region; bump(S(), R, 'd'); if (e.kind === 'hot') bump(S(), R, 'h'); if (e.kind === 'rival') bump(S(), R, 'r'); if (e.kind === 'fragile' && e.cond >= 0.97) bump(S(), R, 'c'); if (night > 0.5) bump(S(), R, 'n');
+      else if (e.type === 'delivered') { daily('deliver', 1); if (e.kind === 'hot') daily('hot', 1); const R = world.region; bump(S(), R, 'd'); if (e.kind === 'hot') bump(S(), R, 'h'); if (e.kind === 'rival') bump(S(), R, 'r'); if (e.kind === 'fragile' && e.cond >= 0.97) bump(S(), R, 'c'); if (night > 0.5) bump(S(), R, 'n');
         toast(`Delivered. +${money(e.total)}` + (e.cond < 0.97 ? `, cargo ${Math.round(e.cond * 100)}%` : ''), 3.5); audio.chime([523, 659, 784, 1047]); store.commit(); }
       else if (e.type === 'busted') { shake([120, 60, 120]); toast(e.fine ? `Busted. Cargo seized, ${money(e.fine)} fine` : 'Busted. Cargo seized', 3.5); audio.chime([330, 220, 165], 'sawtooth'); store.commit(); }
       else if (e.type === 'late') { toast('Too late. The buyer left', 3); audio.chime([330, 247], 'sawtooth'); }
@@ -859,9 +880,11 @@ function start(hot) {
       headlight.target.position.copy(car.pos).addScaledVector(car.fwd, 30).addScaledVector(car.up, -3);
     }
     fall.update(WX.cur.part, WX.cur.partAmt, camera.position, now / 1000, Math.min(1, L.si / 2.4 + 0.15));
+    skids.flush();
+    { const on = nitro.on && mode === 'roam' && !paused; for (const f of flames) { f.visible = on; if (on) { const k = 0.75 + Math.random() * 0.55; f.scale.set(1, 1, k); } } }
     renderer.render(scene, camera);
 
-    audio.update({ rpm: car.rpm, throttle: live ? (race ? race.input(inp) : inp).throttle : 0, speed: car.speed, slip: car.slip, loose: car.surf !== SURF.ASPHALT ? 1 : 0, grounded: car.grounded, gear: car.gear,
+    audio.update({ nitro: nitro.on, rpm: car.rpm, throttle: live ? (race ? race.input(inp) : inp).throttle : 0, speed: car.speed, slip: car.slip, loose: car.surf !== SURF.ASPHALT ? 1 : 0, grounded: car.grounded, gear: car.gear,
       live: live || mode === 'results', heat: !racing && game.heat, nearest: game.nearest, now,
       intense: (mode === 'race' && race.state === 'run') || (!racing && game.heat) ? 1 : 0, shore: seaNear(car.pos.x, car.pos.z, car.pos.y), rain: WX.cur.rain, storm: WX.cur.wind, indoor: mode !== 'roam' && mode !== 'race' && mode !== 'results' });
 
@@ -920,7 +943,7 @@ function start(hot) {
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
-  window.__game = { tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
+  window.__game = { daily, dailyInfo, skids, get flames() { return flames.map((f) => f.visible); }, tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },
     get drawn() { const r = renderer.info.render; return { quality, locked, shadows: sun.castShadow, triangles: r.triangles, calls: r.calls, small: smallMeshes.reduce((n, m) => n + m.count, 0), smallShown: smallMeshes.reduce((n, m) => n + (m.visible ? m.count : 0), 0) }; },
     get ghost() { return ghost && { time: ghost.time, n: ghost.n, splits: ghost.splits.length, shown: !!ghostVis && ghostVis.car.visible, pos: ghostVis ? ghostVis.car.position.toArray().map(Math.round) : null }; },

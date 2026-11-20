@@ -5,13 +5,14 @@ import { REGIONS } from './regions.js';
 import { STAT_KEYS } from './goals.js';
 import { cleanCup } from './cup.js';
 import { TIP_IDS } from './tips.js';
+import { cleanDaily } from './daily.js';
 
 const KEY = 'highline.save';
 const num = (v, a, b, d) => (typeof v === 'number' && isFinite(v) ? Math.max(a, Math.min(b, v)) : d);
 
 export function freshSave() {
   return { v: 1, cash: 0, runs: 0, car: 'hatch', cars: { hatch: { up: [0, 0, 0, 0], tune: stockTune('hatch'), paint: CARS.hatch.paint } },
-    best: {}, rank: {}, level: 1, units: 'imperial', muted: false, music: true, ghost: true, tod: 'day', weather: 'auto', at: 0, region: 'mountain', kid: false, tilt: false, buzz: true, nitro: false, tips: [], tipsOn: true, stats: {}, done: [], cup: null, cups: {}, savedAt: 0 };
+    best: {}, rank: {}, level: 1, units: 'imperial', muted: false, music: true, ghost: true, tod: 'day', weather: 'auto', at: 0, region: 'mountain', kid: false, tilt: false, buzz: true, nitro: false, tips: [], tipsOn: true, daily: cleanDaily(null), stats: {}, done: [], cup: null, cups: {}, savedAt: 0 };
 }
 
 // Anything read back from storage is checked and repaired field by field, so a damaged or hand-edited save cannot break the game.
@@ -31,7 +32,7 @@ export function cleanSave(raw) {
   }
   s.level = Math.round(num(raw.level, 0, 2, 1));                // race difficulty: 0 easy, 1 moderate, 2 hard
   s.units = raw.units === 'metric' ? 'metric' : 'imperial'; s.muted = !!raw.muted; s.music = raw.music !== false; s.ghost = raw.ghost !== false; s.weather = ['auto', 'clear', 'storm'].includes(raw.weather) ? raw.weather : 'auto'; s.tod = ['day', 'sunset', 'night', 'cycle'].includes(raw.tod) ? raw.tod : 'day'; s.at = raw.at === 1 ? 1 : 0;
-  s.kid = raw.kid === true; s.tilt = raw.tilt === true; s.buzz = raw.buzz !== false; s.nitro = raw.nitro === true; s.tipsOn = raw.tipsOn !== false;
+  s.kid = raw.kid === true; s.tilt = raw.tilt === true; s.buzz = raw.buzz !== false; s.nitro = raw.nitro === true; s.tipsOn = raw.tipsOn !== false; s.daily = cleanDaily(raw.daily);
   if (Array.isArray(raw.tips)) s.tips = [...new Set(raw.tips.filter((id) => TIP_IDS.includes(id)))];
   if (raw.stats && typeof raw.stats === 'object') for (const r of Object.keys(REGIONS)) {   // goal counters per region
     const st = raw.stats[r]; if (!st || typeof st !== 'object') continue;

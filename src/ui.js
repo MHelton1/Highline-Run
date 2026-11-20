@@ -233,6 +233,7 @@ export function createUI(g) {
     card('pause', [
       el('span', { class: 'lbl' }, racing ? 'Race paused' : 'Paused'), el('h2', { id: 'dlg-title' }, 'Menu'),
       el('p', { class: 'note', id: 'dlg-save' }, g.store.status()),
+      (() => { const d = g.dailyInfo(); return el('div', { class: 'daily' + (d.done ? ' done' : ''), id: 'dlg-daily' }, el('span', { class: 'lbl' }, d.done ? 'Daily challenge · done' : `Daily challenge · ${money(d.pay)}`), el('span', { class: 'dtext' }, d.text), el('span', { class: 'dprog' }, d.done ? (d.streak > 1 ? `Done. ${d.streak} days in a row. A new one tomorrow` : 'Done. A new one tomorrow') : d.progress + (d.streak > 0 ? ` · streak ${d.streak}` : ''))); })(),
       el('div', { class: 'actions' },
         el('button', { id: 'dlg-go', type: 'button', class: 'btn primary', onclick: () => g.resume() }, 'Back to driving'),
         racing && el('button', { id: 'dlg-restart', type: 'button', class: 'btn', onclick: () => g.restartRace() }, 'Restart race'),

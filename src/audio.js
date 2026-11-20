@@ -79,7 +79,7 @@ export function createAudio() {
       n.tyre.g.gain.setTargetAtTime(on * (s.grounded ? Math.min(0.09, s.slip * 0.07 + s.loose * Math.min(1, s.speed / 30) * 0.04) : 0), t, 0.06);
       n.tyre.f.frequency.setTargetAtTime(s.loose ? 500 : 1400, t, 0.1);
       const w = Math.min(1, s.speed / 70);
-      n.wind.g.gain.setTargetAtTime(on * w * w * 0.11, t, 0.15); n.wind.f.frequency.setTargetAtTime(300 + w * 900, t, 0.15);
+      n.wind.g.gain.setTargetAtTime(on * (w * w * 0.11 + (s.nitro ? 0.07 : 0)), t, s.nitro ? 0.05 : 0.15); n.wind.f.frequency.setTargetAtTime(300 + w * 900 + (s.nitro ? 700 : 0), t, 0.15);   // nitro adds a rush of air
       n.so.frequency.setTargetAtTime(Math.floor(s.now / 420) % 2 ? 660 : 880, t, 0.02);
       n.sg.gain.setTargetAtTime(on && s.heat ? 0.035 * Math.max(0, 1 - s.nearest / 320) : 0, t, 0.1);
     },

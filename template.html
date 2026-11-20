@@ -283,6 +283,7 @@ body.photo .hud, body.photo #vig { display: none; }
 #shot[hidden] { display: none; }
 #drift { position: absolute; left: 50%; top: 31%; transform: translateX(-50%); pointer-events: none; font: 700 clamp(22px, 4.6vw, 34px)/1 var(--display); letter-spacing: .08em; text-transform: uppercase; color: #ffd36a; text-shadow: 0 2px 0 rgba(14,17,20,.6), 0 0 18px rgba(14,17,20,.45); white-space: nowrap; }
 #drift[hidden] { display: none; }
+.daily { display: grid; gap: 2px; margin: 8px 0 10px; padding: 8px 10px; border: 1px solid var(--amber); border-radius: 8px; background: rgba(242,179,61,.08); } .daily.done { border-color: var(--line); background: none; } .daily .dtext { font: 600 17px var(--display); letter-spacing: .03em; } .daily .dprog { font-size: 13px; color: var(--dim); }
 #tip { position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(22px + env(safe-area-inset-bottom, 0px)); z-index: 3; width: min(520px, calc(100% - 32px)); box-sizing: border-box; padding: 9px 14px; pointer-events: auto; cursor: pointer; border-color: var(--amber); }
 #tip[hidden], body.menu #tip, body.photo #tip { display: none; } #tip-text { display: block; font-size: 15px; line-height: 1.35; margin-top: 2px; }
 .touch #tip { bottom: calc(22px + env(safe-area-inset-bottom, 0px) + min(84px, 21vw) + 18px + min(58px, 14.5vw) + 14px); } @media (max-height: 520px) { .touch #tip { bottom: auto; top: 22%; width: min(400px, calc(100% - 360px)); padding: 6px 10px; } #tip-text { font-size: 13px; } } body.menu #drift, body.photo #drift { display: none; }
@@ -367,7 +368,7 @@ body.bigmap .hud { visibility: hidden; }
   <div id="start">
     <div class="inner">
       <h1>Highline <em>Run</em></h1>
-      <p>Build 24. New: short tips for new players (switch them off in the menu). Build 23 added a nitro kit at the garages, build 22 drift scoring and speed traps, build 21 a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
+      <p>Build 25. New: a daily challenge with a streak bonus (see the menu), tyre marks and nitro flames. Recent: tips for new players, a nitro kit at the garages, drift scoring and speed traps, and a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
       <dl class="keys card desk">
         <dt>W A S D / arrows</dt><dd>Gas, steer, brake. Hold brake at a stop to reverse.</dd>
         <dt>Space · Shift</dt><dd>Handbrake for slides · nitro (once you buy the kit at a garage)</dd>

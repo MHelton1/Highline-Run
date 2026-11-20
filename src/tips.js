@@ -19,6 +19,8 @@ export const TIPS = [
     text: (c) => c.touch ? 'Stuck or on your roof? FLIP sets the car upright and ROAD puts you back on the road.' : 'Stuck or on your roof? F sets the car upright and R puts you back on the road.' },
   { id: 'map', when: (c) => c.t > 45 && !c.job && !c.heat, skip: () => false,
     text: (c) => (c.touch ? 'Tap the corner map' : 'Press G or click the corner map') + ' for the big map, then tap a place to drop a marker the arrow will point to.' },
+  { id: 'daily', when: (c) => c.t > 70 && !c.job && !c.heat, skip: () => false,
+    text: (c) => 'There is a new daily challenge every day, with a bigger reward for days in a row. See it in the menu.' },
   { id: 'nitro', when: (c) => c.cash >= 4000 && !c.nitro && !c.job, skip: () => false,
     text: (c) => 'You can afford the nitro kit: any garage, Parts tab. It fits every car.' },
   { id: 'stunts', when: (c) => c.t > 100 && !c.job && !c.heat, skip: () => false,

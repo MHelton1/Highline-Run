@@ -1,5 +1,6 @@
 // Menus drawn over the 3D view: the garage, race offers and results, and the pause menu.
 import { REGIONS, REGION_IDS } from './regions.js';
+import { NITRO } from './stunts.js';
 import { CARS, CAR_IDS, FIND_IDS, PRIZE_IDS, PAINTS, UPGRADES, TUNING, upgradeCost, stockTune, buildSpec, measure, rate } from './cars.js';
 import { MEDALS, PLACES, LEVELS, KID_LEVEL, rankKey, prizes, medals } from './race.js';
 import { regionGoals, garageGoals, isDone, paintLocked, regionComplete, REGION_PAINT } from './goals.js';
@@ -107,6 +108,11 @@ export function createUI(g) {
           el('button', { id: 'g-up-' + u.key, type: 'button', class: 'btn', disabled: lv >= 3 || s.cash < cost, onclick: () => buyUpgrade(t) }, lv >= 3 ? 'Fully fitted' : `Stage ${lv + 1} · ${money(cost)}`),
           el('p', { class: 'up-what' }, u.what)));
       });
+      const nos = !!s.nitro;      // the nitro kit: bought once, fits every car
+      out.push(el('div', { class: 'uprow' },
+        el('span', { class: 'up-name' }, 'Nitro kit'),
+        el('button', { id: 'g-nitro', type: 'button', class: 'btn', disabled: nos || s.cash < NITRO.price, onclick: () => { const t = S(); if (t.nitro || t.cash < NITRO.price) return g.audio.deny(); t.cash -= NITRO.price; t.nitro = true; g.store.commit(); g.audio.buy(); g.showNitro(); draw(); } }, nos ? 'Fitted to every car' : `Buy · ${money(NITRO.price)}`),
+        el('p', { class: 'up-what' }, 'Fits every car you own. Hold NOS (Shift, or LB on a controller) for a hard push. Drifts, jumps and steady driving refill it. Free driving only, not in races.')));
     } else {
       for (const t of TUNING) {
         const v = own.tune[t.key], id = 'g-tune-' + t.key;

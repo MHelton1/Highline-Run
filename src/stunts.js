@@ -70,3 +70,20 @@ export function crossed(trap, px, pz, qx, qz) {
   if ((s0 < 0) === (s1 < 0)) return false;
   return Math.hypot(qx - trap.x, qz - trap.z) < TRAP_R;
 }
+
+// Nitro: a kit bought once at a garage that fits every car. The tank fills from drifts, air time and steady driving,
+// and a press burns it for a strong push forward. Free driving only (never in races or kid mode).
+export const NITRO = { price: 4000, acc: 6.5, burn: 1 / 3.5, cruise: 1 / 70, cruiseSpeed: 15, perDrift: 1 / 1500, perAir: 0.3, min: 0.06 };
+export class NitroTank {
+  constructor(level = 0.5) { this.level = level; this.on = false; this.lock = false; }
+  // one step: wants is the button, ok whether nitro may be used now; returns whether the push is on
+  step(dt, wants, ok, speed) {
+    if (this.level <= 0) this.lock = true;               // empty: let go of the button before it works again
+    if (!wants) this.lock = false;
+    this.on = !!(ok && wants && !this.lock && this.level > (this.on ? 0 : NITRO.min));
+    if (this.on) this.level = Math.max(0, this.level - dt * NITRO.burn);
+    else if (ok && speed > NITRO.cruiseSpeed) this.level = Math.min(1, this.level + dt * NITRO.cruise);
+    return this.on;
+  }
+  add(v) { this.level = Math.min(1, this.level + v); }
+}

@@ -19,7 +19,7 @@ import { createTilt, createWake, buzz, canBuzz } from './phone.js';
 import { cupRound, cupTeams, newCup, scoreRound, cupTable, cupPlace, cupOver, purse, CUP_ROUNDS, CUP_NAME, CUP_CAR } from './cup.js';
 import { createUI, money, clock } from './ui.js';
 import { mapPoints, pickPoint, arrived, pixelToWorld, mapView } from './nav.js';
-import { DriftMeter, slideAngle, driftPay, trapPay, placeTraps, crossed, MPH, TRAP_MIN_MPH } from './stunts.js';
+import { DriftMeter, slideAngle, driftPay, trapPay, placeTraps, crossed, MPH, TRAP_MIN_MPH, NitroTank, NITRO } from './stunts.js';
 import { REGIONS, REGION_IDS } from './regions.js';
 
 const $ = (id) => document.getElementById(id);
@@ -190,6 +190,7 @@ function start(hot) {
     }
   }
   function landed(t) {              // back on the ground after a jump: long air pays outside races
+    if (mode === 'roam' && S().nitro) nitro.add(t * NITRO.perAir);
     if (mode === 'roam' && t >= AIR_MIN) {
       const pay = airPay(t), rec = best(S(), world.region, 'a', Math.floor(t * 10)); S().cash += pay; store.commit();
       shake(40); toast(`Air time ${t.toFixed(1)} s. +${money(pay)}` + (rec && t >= 1.5 ? '. Your longest here' : ''), 2); audio.chime([784, 1175]);
@@ -208,11 +209,13 @@ function start(hot) {
   for (const z of zones) z.beam.position.set(z.x, z.y, z.z);
   // free-roam scoring: speed trap cameras on the fast stretches, and a drift meter
   const traps = placeTraps(world, [...zones, ...world.places.sites, ...finds.ramps]); buildTraps(world, traps, scene);
-  const drift = new DriftMeter(); let trapPrev = null;
+  const drift = new DriftMeter(), nitro = new NitroTank(0.5); let trapPrev = null;
+  const nitroOk = () => S().nitro && mode === 'roam' && !S().kid;
+  const showNitro = () => document.body.classList.toggle('nitro', !!S().nitro && !S().kid);
   function stunts(dt) {
     if (mode !== 'roam' || S().kid) { drift.reset(); trapPrev = null; return; }
     const r = drift.step(dt, { speed: car.speed, angle: slideAngle(car.vel, car.fwd, car.left), grounded: car.grounded, impact: car.impact });
-    if (r && r.kind === 'paid') { S().cash += r.pay; const rec = best(S(), world.region, 'f', r.score); store.commit(); toast(`Drift ${r.score.toLocaleString('en-US')}. +${money(r.pay)}` + (rec && r.score >= 500 ? '. Your best here' : ''), 2); audio.chime([659, 988]); }
+    if (r && r.kind === 'paid') { if (S().nitro) nitro.add(r.score * NITRO.perDrift); S().cash += r.pay; const rec = best(S(), world.region, 'f', r.score); store.commit(); toast(`Drift ${r.score.toLocaleString('en-US')}. +${money(r.pay)}` + (rec && r.score >= 500 ? '. Your best here' : ''), 2); audio.chime([659, 988]); }
     else if (r && r.kind === 'lost') toast(`Drift lost (${r.score.toLocaleString('en-US')})`, 1.4);
     const px = car.pos.x, pz = car.pos.z;
     if (trapPrev) for (const t of traps) if (crossed(t, trapPrev.x, trapPrev.z, px, pz)) {
@@ -515,7 +518,7 @@ function start(hot) {
   const setMute = () => { S().muted = !S().muted; audio.setMuted(S().muted); store.commit(); };
   const setMusic = () => { S().music = !S().music; audio.setMusic(S().music); store.commit(); };
   // kid mode: the car drives itself, the GO and SLIDE buttons go, cargo jobs allow more time and patrols bust more slowly
-  const showKid = () => { const on = S().kid; game.kid = on; document.body.classList.toggle('kid', on); const b = $('kidbtn'); b.textContent = 'Kid mode: ' + (on ? 'on' : 'off'); b.setAttribute('aria-pressed', String(on)); };
+  const showKid = () => { const on = S().kid; game.kid = on; document.body.classList.toggle('kid', on); const b = $('kidbtn'); b.textContent = 'Kid mode: ' + (on ? 'on' : 'off'); b.setAttribute('aria-pressed', String(on));  showNitro(); };
   function setKid(on) {
     S().kid = on; store.commit(); showKid();
     if (mode !== 'title') toast(on ? (coarse ? 'Kid mode on. The car drives itself: just steer, hold ■ to stop' : 'Kid mode on. The car drives itself: just steer, hold brake to stop') : 'Kid mode off', 3.2);
@@ -560,7 +563,7 @@ function start(hot) {
     racing: () => mode === 'race', resume, restartRace: () => startRace(race.def), quitRace: endRace,
     options: () => ({ metric: metric(), muted: S().muted, music: S().music, tod: TOD_NAME[S().tod], weather: WEATHER_MODE_NAME[S().weather], goals: (() => { const a = allGoals(S()); return { done: a.filter((q) => S().done.includes(q.id)).length, all: a.length }; })(), fps: showFps, kid: S().kid, touch: coarse, tilt: S().tilt, canBuzz: canBuzz(), buzz: S().buzz }), toggleKid: () => setKid(!S().kid),
     toggleUnits: setUnits, toggleMute: setMute, toggleMusic: setMusic, nextWeather: () => { setWeather(WEATHER_MODES[(WEATHER_MODES.indexOf(S().weather) + 1) % WEATHER_MODES.length]); store.commit(); }, ghostTime, setGhost: (on) => { S().ghost = on; store.commit(); }, nextTime: () => { setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); }, toggleFps: () => { showFps = !showFps; if (!showFps) $('fps').textContent = ''; },
-    findHints, findCars: () => FIND_IDS,
+    findHints, findCars: () => FIND_IDS, showNitro,
     toggleTilt: () => setTilt(!S().tilt).then(() => { if (paused) ui.pause(); }), toggleBuzz: () => { S().buzz = !S().buzz; store.commit(); if (S().buzz) buzz(40); },
     photo: openPhoto, map: openMap,
     testCash: () => { S().cash += 10000; store.commit(); audio.buy(); }, resetProgress,
@@ -628,7 +631,7 @@ function start(hot) {
     }
     // the view widens a little with speed; a tall window gets a taller view so it still shows the road to both sides
     const cw = canvas.clientWidth, ch = canvas.clientHeight;
-    let fovT = 62 + Math.min(18, car.speed * 0.28);
+    let fovT = 62 + Math.min(18, car.speed * 0.28) + (nitro.on ? 7 : 0);
     if (ch > cw) fovT = Math.max(fovT, Math.min(86, 2 * Math.atan(Math.tan(24 * Math.PI / 180) * ch / cw) * 180 / Math.PI + Math.min(6, car.speed * 0.1)));
     camera.fov += (fovT - camera.fov) * Math.min(1, dt * 3);
     // on an upright phone the picture is lifted so the car sits above the thumb buttons
@@ -650,7 +653,7 @@ function start(hot) {
   // ---- HUD refs ----
   const el = { cash: $('cash'), job: $('job'), jobLabel: $('joblabel'), jobName: $('jobname'), jobDist: $('jobdist'), arrow: $('arrow'), time: $('jtime'), cond: $('jcond'), pay: $('jpay'), bust: $('bustfill'), bustRow: $('bustrow'),
     speed: $('speed'), unit: $('unit'), gear: $('gear'), rpm: $('rpmfill'), surf: $('surf'), alt: $('alt'),
-    race: $('racecard'), rarrow: $('rarrow'), rlabel: $('rlabel'), rtime: $('rtime'), rposLbl: $('rposlbl'), rposN: $('rposn'), rposD: $('rposd'), ptext: $('ptext'), pkey: $('pkey'), drift: $('drift') };
+    race: $('racecard'), rarrow: $('rarrow'), rlabel: $('rlabel'), rtime: $('rtime'), rposLbl: $('rposlbl'), rposN: $('rposn'), rposD: $('rposd'), ptext: $('ptext'), pkey: $('pkey'), drift: $('drift'), nos: $('nosfill') };
   let seaT = 0, kidUpT = 0, kidStuckT = 0, last = -1, acc = 0, upside = 0, hudT = 0, lastSurf = -1, airT = 0, thumpT = 0;
 
   // ---- adaptive quality: step detail down if the frame rate stays low ----
@@ -696,10 +699,10 @@ function start(hot) {
   function simulate(dt, inp) {
     if (paused || mode === 'title' || mode === 'offer') return;
     if (S().kid && (mode === 'roam' || mode === 'race')) inp = kidInput(car, inp, kidOut);
-    acc += dt; thumpT -= dt;
+    acc += dt; thumpT -= dt; if (mode !== 'roam') nitro.on = false;
     while (acc >= STEP) {
       acc -= STEP;
-      if (mode === 'roam') { car.step(STEP, inp); game.step(STEP); if (game.rammed > 3) { hit(game.rammed + 4); game.rammed = 0; } }
+      if (mode === 'roam') { const nos = nitro.step(STEP, inp.nitro, nitroOk(), car.speed); car.step(STEP, nos ? { ...inp, boost: NITRO.acc } : inp); game.step(STEP); if (game.rammed > 3) { hit(game.rammed + 4); game.rammed = 0; } }
       else if (mode === 'garage') car.step(STEP, HOLD);
       else { car.step(STEP, race.input(inp)); race.step(STEP); if (rec && race.state === 'run') rec.sample(race.clock, car.pos, car.quat); if (race.bump > 3) { hit(race.bump + 4); race.bump = 0; } }
       if (car.impact > 6) hit(car.impact);
@@ -849,6 +852,7 @@ function start(hot) {
     if (car.surf !== lastSurf) { lastSurf = car.surf; el.surf.textContent = RG.surfName[car.surf]; el.surf.dataset.s = car.surf; }
     el.alt.textContent = m ? Math.round(Math.max(0, car.pos.y + ALT0)) + ' m' : Math.round(Math.max(0, car.pos.y + ALT0) * 3.28084).toLocaleString('en-US') + ' ft';
     el.cash.textContent = money(S().cash);
+    if (S().nitro) { el.nos.style.transform = `scaleX(${nitro.level.toFixed(3)})`; el.nos.classList.toggle('burn', nitro.on); }
     { const on = mode === 'roam' && drift.on && drift.shown >= 60; el.drift.hidden = !on; if (on) el.drift.textContent = `Drift ${drift.shown.toLocaleString('en-US')}` + (drift.mult > 1 ? ` ×${drift.mult}` : ''); }
     if (showFps) $('fps').textContent = Math.round(fpsAvg) + ' fps · q' + quality;
     el.job.hidden = racing; el.race.hidden = !racing;
@@ -891,7 +895,7 @@ function start(hot) {
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
-  window.__game = { traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
+  window.__game = { nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },
     get drawn() { const r = renderer.info.render; return { quality, locked, shadows: sun.castShadow, triangles: r.triangles, calls: r.calls, small: smallMeshes.reduce((n, m) => n + m.count, 0), smallShown: smallMeshes.reduce((n, m) => n + (m.visible ? m.count : 0), 0) }; },
     get ghost() { return ghost && { time: ghost.time, n: ghost.n, splits: ghost.splits.length, shown: !!ghostVis && ghostVis.car.visible, pos: ghostVis ? ghostVis.car.position.toArray().map(Math.round) : null }; },

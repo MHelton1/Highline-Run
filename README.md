@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 22
+# Highline Run: browser prototype, build 23
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -84,6 +84,7 @@ Pictures for judging the look (not pass or fail):
     node tests/bigmapui.cjs [port|desk|land] [outdir]   # big map: open from the corner map, mark a garage, pin, arrive, clear
     node tests/stunts.mjs [region]                # drift meter, trap pay, trap spots in the real world
     node tests/stuntsui.cjs [desk|port] [outdir]  # speed traps pay a new best once, drift pays and shows on the dash, goals
+    node tests/nitroui.cjs [port|desk] [outdir]   # nitro: buy in Parts, NOS control and tank shown, faster run, touch, not in races
     node tests/photoui.cjs [port|desk] [outdir]   # photo mode: dash hidden, drag to orbit, picture and download, back
     node tests/phoneui.cjs [port|land] [outdir]   # phone extras: tilt steering from the menu (fake tilt readings), buzz
     node tests/heatui.cjs [port|desk] [outdir]    # roadblock and backup on a hot run, getting past, clearing up
@@ -203,6 +204,10 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   loses it) and clocks the car through 3 trap cameras per region (yellow dots on the maps). A new best pays $10 per mph
   over 50, minus what the old best already paid. Saved per region in `stats`: `f` best drift, `s0`-`s2` trap bests (mph).
   Two goals per region: a 2,000 drift and all three traps at 80 mph (60 goals in all).
+- Nitro (build 23): a $4,000 kit in the garage's Parts tab (`nitro` in the save) fits every car. `NitroTank` in
+  `src/stunts.js`: 3.5 s of burn, refilled by drifts (score/1500), air time (0.3 per second) and driving over 15 m/s
+  (1/70 per second); once empty the button must be let go. While on, `car.step` gets `boost` (6.5 m/s² forward push,
+  grounded and in a forward gear) and the view widens 7°. Shift or B, LB on a controller, NOS on touch. Free driving only.
 - Cargo rivals steer round a pickup's hut when their way in runs through it (the coast's huts sat on the line in).
 - Kid mode (`src/kid.js`, saved as `kid`): `kidInput()` replaces the pedals so the car drives itself at `KID` speeds
   (22 m/s tarmac, 16 dirt, 12 off road, less in turns); a held brake still stops and reverses. Cargo time x1.4, bust

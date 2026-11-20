@@ -1,7 +1,7 @@
 // Keyboard, gamepad and touch merged into one input state. While a menu is open the same devices move a highlight instead.
 export function createInput(touchRoot, canvas) {
-  const keys = new Set(), touch = { left: 0, right: 0, gas: 0, brake: 0, hand: 0 };
-  const state = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: false, pad: false };
+  const keys = new Set(), touch = { left: 0, right: 0, gas: 0, brake: 0, hand: 0, nitro: 0 };
+  const state = { steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false, analog: false, pad: false };
   const held = new Set(), listeners = {};
   let menu = false, navDir = '', navT = 0;
   const fire = (name, a, b) => { if (listeners[name]) listeners[name](a, b); };
@@ -144,7 +144,7 @@ export function createInput(touchRoot, canvas) {
   state.poll = (now = performance.now()) => {
     const k = (c) => keys.has(c) ? 1 : 0;
     let steer = (k('KeyA') || k('ArrowLeft') || touch.left) - (k('KeyD') || k('ArrowRight') || touch.right);
-    let thr = k('KeyW') || k('ArrowUp') || touch.gas, brk = k('KeyS') || k('ArrowDown') || touch.brake, hb = !!(k('Space') || touch.hand), analog = false;
+    let thr = k('KeyW') || k('ArrowUp') || touch.gas, brk = k('KeyS') || k('ArrowDown') || touch.brake, hb = !!(k('Space') || touch.hand), nos = !!(k('ShiftLeft') || k('ShiftRight') || k('KeyB') || touch.nitro), analog = false;
     // tilt steering (phones, when switched on): the steering arrows still win while a thumb is on one
     const T = state.tilt;
     if (T && T.on && !touch.left && !touch.right && !menu) { steer = Math.sign(T.steer) * Math.pow(Math.abs(T.steer), 1.3); analog = true; }
@@ -168,12 +168,12 @@ export function createInput(touchRoot, canvas) {
       } else {
         const sx = dz(gp.axes[0] || 0);
         if (sx) { steer = -Math.sign(sx) * Math.pow(Math.abs(sx), 1.6); analog = true; }
-        thr = Math.max(thr, b(7)); brk = Math.max(brk, b(6)); if (b(0) > 0.5 || b(5) > 0.5) hb = true;
+        thr = Math.max(thr, b(7)); brk = Math.max(brk, b(6)); if (b(0) > 0.5 || b(5) > 0.5) hb = true; if (b(4) > 0.5) nos = true;
         if (b(14) > 0.5) steer = 1; if (b(15) > 0.5) steer = -1;
       }
     }
-    if (menu) { steer = thr = brk = 0; hb = false; }
-    state.steer = steer; state.throttle = thr; state.brake = brk; state.handbrake = hb; state.analog = analog;
+    if (menu) { steer = thr = brk = 0; hb = nos = false; }
+    state.steer = steer; state.throttle = thr; state.brake = brk; state.handbrake = hb; state.nitro = nos; state.analog = analog;
     return state;
   };
   return state;

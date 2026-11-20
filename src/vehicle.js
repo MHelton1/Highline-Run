@@ -220,6 +220,7 @@ export class Vehicle {
 
     // ---- aero, world edge ----
     this.F.addScaledVector(this.vel, -0.6 * s.cdA * speed);
+    if (input.boost && grounded >= 2 && this.gear > 0) this.F.addScaledVector(fwd, m * input.boost);   // nitro
     if (grounded) this.F.addScaledVector(up, -0.6 * s.downforce * vF * vF);
     const edge = (world.half ?? HALF) - 30;
     if (Math.abs(this.pos.x) > edge) this.F.x -= m * (Math.sign(this.pos.x) * (Math.abs(this.pos.x) - edge) * 6.9 + this.vel.x * 1.9);

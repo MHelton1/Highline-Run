@@ -34,4 +34,12 @@ assert.ok(crossed(t0, t0.x - t0.fx * 2, t0.z - t0.fz * 2, t0.x + t0.fx * 2, t0.z
 assert.ok(!crossed(t0, t0.x + t0.fx * 2, t0.z + t0.fz * 2, t0.x + t0.fx * 4, t0.z + t0.fz * 4));
 assert.ok(!crossed(t0, t0.x - t0.fx * 2 + t0.fz * 30, t0.z - t0.fz * 2 - t0.fx * 30, t0.x + t0.fx * 2 + t0.fz * 30, t0.z + t0.fz * 2 - t0.fx * 30));
 console.log(region, 'traps', traps.map((t) => [Math.round(t.x), Math.round(t.z)]).join(' '));
+// nitro tank
+{ const { NitroTank, NITRO } = await import('../src/stunts.js');
+  const n = new NitroTank(1); let t = 0; while (n.step(1 / 60, true, true, 30)) t += 1 / 60;
+  assert.ok(Math.abs(t - 1 / NITRO.burn) < 0.05, 'burns for ' + t); assert.ok(n.level < 0.001);
+  assert.equal(n.step(1 / 60, true, true, 30), false, 'empty'); n.add(0.5); assert.equal(n.step(1 / 60, true, true, 30), false, 'must let go first');
+  assert.equal(n.step(1 / 60, true, true, 30) || n.step(1 / 60, false, true, 30), false); assert.equal(n.step(1 / 60, true, true, 30), true);
+  const m = new NitroTank(0.5); assert.equal(m.step(1 / 60, true, false, 30), false, 'not allowed'); const l = m.level; m.step(10, false, true, 30); assert.ok(m.level > l); m.step(10, false, true, 5); 
+  const k = new NitroTank(0.03); assert.equal(k.step(1 / 60, true, true, 30), false, 'too little to start'); }
 console.log('stunts: all checks passed');

@@ -120,6 +120,9 @@ body.kid #kidchip { display: inline-block; }
 #tl { left: var(--l); bottom: var(--y); } #tr { left: calc(var(--l) + var(--b) + var(--g)); bottom: var(--y); }
 #tg { right: var(--r); bottom: var(--y); } #tbk { right: calc(var(--r) + var(--b) + var(--g)); bottom: var(--y); }
 #th { right: calc(var(--r) + (var(--b) - var(--s)) / 2); bottom: var(--y2); }
+#tn { right: calc(var(--r) + (var(--b) - var(--s)) / 2 + var(--s) + 10px); bottom: var(--y2); display: none; } body.nitro #tn { display: grid; } #tn.on { background: #4fc3ff; }
+#nos { display: none; grid-column: 1 / -1; height: 5px; margin-top: 5px; border-radius: 3px; background: var(--line); overflow: hidden; } body.nitro #nos { display: block; }
+#nosfill { height: 100%; background: #4fc3ff; transform-origin: left; transform: scaleX(0.5); } #nosfill.burn { background: #b4e8ff; }
 #trs { left: var(--l); bottom: var(--y2); } #tf { left: calc(var(--l) + var(--s) + 8px); bottom: var(--y2); } #tc { left: calc(var(--l) + (var(--s) + 8px) * 2); bottom: var(--y2); }
 
 /* ---- buttons shared by every menu ---- */
@@ -269,6 +272,7 @@ body.kid #tg, body.kid #th { display: none; }
   .touch #th { bottom: var(--y); right: calc(var(--r) + 2 * (var(--b) + var(--g))); }
   .touch #trs, .touch #tf, .touch #tc { bottom: var(--y); left: calc(var(--l) + 2 * (var(--b) + var(--g)) + var(--k, 0) * (var(--s) + 8px)); }
   .touch #tf { --k: 1; } .touch #tc { --k: 2; }
+  .touch #tn { bottom: var(--y); right: calc(var(--r) + 2 * (var(--b) + var(--g)) + var(--s) + 8px); }
 }
 #photo { position: absolute; inset: 0; pointer-events: none; z-index: 6; }
 #photobar { pointer-events: auto; position: absolute; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom, 0px)); display: flex; gap: 10px; align-items: center; padding: 10px 12px; width: min(560px, calc(100% - 32px)); box-sizing: border-box; flex-wrap: wrap; justify-content: center; }
@@ -317,6 +321,7 @@ body.bigmap .hud { visibility: hidden; }
       <div id="gearbox"><span class="lbl">Gear</span><span id="gear">1</span></div>
       <div id="speedbox"><span id="speed">0</span><span id="unit" class="lbl">mph</span></div>
       <div id="rpm"><div id="rpmfill"></div></div>
+      <div id="nos" aria-hidden="true"><div id="nosfill"></div></div>
     </div>
   </div>
   <div id="count" aria-hidden="true"></div>
@@ -324,7 +329,7 @@ body.bigmap .hud { visibility: hidden; }
   <div id="touch">
     <div class="tb big" id="tl" data-t="left">◀</div><div class="tb big" id="tr" data-t="right">▶</div>
     <div class="tb big" id="tg" data-t="gas">GO</div><div class="tb big" id="tbk" data-t="brake">■</div>
-    <div class="tb sm" id="th" data-t="hand">SLIDE</div>
+    <div class="tb sm" id="th" data-t="hand">SLIDE</div><div class="tb sm" id="tn" data-t="nitro">NOS</div>
     <div class="tb sm" id="trs" data-t="reset">ROAD</div><div class="tb sm" id="tf" data-t="flip">FLIP</div><div class="tb sm" id="tc" data-t="camera">CAM</div>
   </div>
   <section id="garage" class="card" hidden aria-label="Garage">
@@ -358,14 +363,14 @@ body.bigmap .hud { visibility: hidden; }
   <div id="start">
     <div class="inner">
       <h1>Highline <em>Run</em></h1>
-      <p>Build 22. New: drift scoring and speed traps (yellow dots on the map) pay cash when you drive freely. Also new: a big map. Tap the corner map (or press G) to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
+      <p>Build 23. New: a nitro kit at the garages (Parts tab). Drifts and jumps fill the tank. Build 22 added drift scoring and speed traps, build 21 a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
       <dl class="keys card desk">
         <dt>W A S D / arrows</dt><dd>Gas, steer, brake. Hold brake at a stop to reverse.</dd>
-        <dt>Space</dt><dd>Handbrake for slides</dd>
+        <dt>Space · Shift</dt><dd>Handbrake for slides · nitro (once you buy the kit at a garage)</dd>
         <dt>Stop in a light</dt><dd>Amber loads cargo, green delivers. Blue is a garage, violet a race.</dd>
         <dt>R · F · Esc</dt><dd>Back to the road · flip upright · menu</dd>
         <dt>G · O</dt><dd>Big map and marker · photo mode</dd>
-        <dt>Controller</dt><dd>RT gas, LT brake, left stick steer, A handbrake, Y road, X flip, B camera, Back map, Start menu</dd>
+        <dt>Controller</dt><dd>RT gas, LT brake, left stick steer, A handbrake, LB nitro, Y road, X flip, B camera, Back map, Start menu</dd>
       </dl>
       <dl class="keys card tch">
         <dt>◀ ▶</dt><dd>Steer</dd><dt>GO · ■</dt><dd>Gas · brake (hold at a stop to reverse)</dd><dt>Slide</dt><dd>Handbrake</dd>

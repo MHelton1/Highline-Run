@@ -18,6 +18,7 @@ import { createStore } from './save.js';
 import { createTilt, createWake, buzz, canBuzz } from './phone.js';
 import { cupRound, cupTeams, newCup, scoreRound, cupTable, cupPlace, cupOver, purse, CUP_ROUNDS, CUP_NAME, CUP_CAR } from './cup.js';
 import { createUI, money, clock } from './ui.js';
+import { mapPoints, pickPoint, arrived, pixelToWorld, mapView } from './nav.js';
 import { REGIONS, REGION_IDS } from './regions.js';
 
 const $ = (id) => document.getElementById(id);
@@ -195,7 +196,7 @@ function start(hot) {
   const patrolVis = Array.from({ length: 6 }, () => {   // three on the beat, plus room for a roadblock and backup
    const v = buildCar(PATROL_SPEC, { paint: 0x1d2b45, trim: 0xe9edf2, lightbar: true }); scene.add(v.car); return v; });
   const beam = (color, r) => { const b = makeBeam(color, r); scene.add(b); return b; };
-  const pickBeams = [0, 1, 2].map(() => beam(0xf2b33d)), dropBeam = beam(0x54d17a), gateBeams = [beam(0x62dcea, 10), beam(0x62dcea, 10)];
+  const pickBeams = [0, 1, 2].map(() => beam(0xf2b33d)), dropBeam = beam(0x54d17a), navBeam = beam(0xff6fae, 6), gateBeams = [beam(0x62dcea, 10), beam(0x62dcea, 10)];
   // places where stopping opens something: garages (blue) and race starts (violet)
   const zones = [
     ...garages.map((g) => ({ kind: 'garage', g, x: g.x, z: g.z, y: g.y, r: 7, label: 'Open the garage', beam: beam(0x4f9dff, 7) })),
@@ -217,18 +218,28 @@ function start(hot) {
   // ---- minimap: north (+z) is up, which puts +x on the left, as in a true view from above ----
   const mm = $('minimap'), mctx = mm.getContext('2d'), MM = 300, K = MM / SIZE; mm.width = mm.height = MM;
   const mx = (x) => (HALF - x) * K, my = (z) => (HALF - z) * K;
-  const mapBase = document.createElement('canvas'); mapBase.width = mapBase.height = MM;
-  { const g = mapBase.getContext('2d'); g.lineCap = g.lineJoin = 'round';
-    for (const road of world.roads.slice().reverse()) { g.beginPath(); for (let i = road.from; i <= road.to; i += 4) { const x = mx(road.x[i]), y = my(road.z[i]); i === road.from ? g.moveTo(x, y) : g.lineTo(x, y); } if (road.closed) g.closePath(); g.strokeStyle = road.surf === SURF.ASPHALT ? '#f3efe4' : '#c79a5b'; g.lineWidth = road.surf === SURF.ASPHALT ? 5 : 3; if (road.surf !== SURF.ASPHALT) g.setLineDash([7, 6]); else g.setLineDash([]); g.stroke(); }
-    if (world.sea != null) {         // the sea, tinted blue
-      const img = g.createImageData(MM, MM), d = img.data;
-      for (let py = 0; py < MM; py++) for (let px = 0; px < MM; px++) if (world.sample(HALF - px / K, HALF - py / K) < world.sea) { const o = (py * MM + px) * 4; d[o] = 40; d[o + 1] = 120; d[o + 2] = 165; d[o + 3] = 120; }
-      const tmp = document.createElement('canvas'); tmp.width = tmp.height = MM; tmp.getContext('2d').putImageData(img, 0, 0); g.globalCompositeOperation = 'destination-over'; g.drawImage(tmp, 0, 0); g.globalCompositeOperation = 'source-over';
+  // the still part of the map (roads, sea, ramps, garages, race starts), painted once per size: the corner map, and the big map
+  let seaImg = null;
+  function paintBase(N, ls = 1, q = 1, v = { cx: 0, cz: 0, span: SIZE }) {   // ls: road width scale, q: symbol scale, v: the square shown
+    const c = document.createElement('canvas'); c.width = c.height = N; const k = N / v.span, fx = (x) => (v.cx + v.span / 2 - x) * k, fy = (z) => (v.cz + v.span / 2 - z) * k;
+    const g = c.getContext('2d'); g.lineCap = g.lineJoin = 'round';
+    for (const road of world.roads.slice().reverse()) { g.beginPath(); for (let i = road.from; i <= road.to; i += 4) { const x = fx(road.x[i]), y = fy(road.z[i]); i === road.from ? g.moveTo(x, y) : g.lineTo(x, y); } if (road.closed) g.closePath(); g.strokeStyle = road.surf === SURF.ASPHALT ? '#f3efe4' : '#c79a5b'; g.lineWidth = (road.surf === SURF.ASPHALT ? 5 : 3) * ls; if (road.surf !== SURF.ASPHALT) g.setLineDash([7 * ls, 6 * ls]); else g.setLineDash([]); g.stroke(); }
+    if (world.sea != null) {         // the sea, tinted blue (sampled once at corner map size, stretched for the big map)
+      if (!seaImg) {
+        const img = g.createImageData(MM, MM), d = img.data;
+        for (let py = 0; py < MM; py++) for (let px = 0; px < MM; px++) if (world.sample(HALF - px / K, HALF - py / K) < world.sea) { const o = (py * MM + px) * 4; d[o] = 40; d[o + 1] = 120; d[o + 2] = 165; d[o + 3] = 120; }
+        seaImg = document.createElement('canvas'); seaImg.width = seaImg.height = MM; seaImg.getContext('2d').putImageData(img, 0, 0);
+      }
+      g.globalCompositeOperation = 'destination-over'; g.drawImage(seaImg, (HALF - v.cx - v.span / 2) * K, (HALF - v.cz - v.span / 2) * K, v.span * K, v.span * K, 0, 0, N, N); g.globalCompositeOperation = 'source-over';
     }
-    g.setLineDash([]); g.strokeStyle = 'rgba(243,239,228,0.7)'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(MM / 2 - 9, MM / 2 + 6); g.lineTo(MM / 2 - 2, MM / 2 - 8); g.lineTo(MM / 2 + 3, MM / 2 - 1); g.lineTo(MM / 2 + 6, MM / 2 - 5); g.lineTo(MM / 2 + 12, MM / 2 + 6); g.stroke();
-    g.strokeStyle = '#0e1114'; g.lineWidth = 2.5;
-    for (const r of finds.ramps) { const x = mx(r.x + r.fx * 8), y = my(r.z + r.fz * 8), a = Math.atan2(-r.fx, -r.fz); g.save(); g.translate(x, y); g.rotate(-a + Math.PI); g.fillStyle = '#e0662a'; g.beginPath(); g.moveTo(0, -8); g.lineTo(7, 6); g.lineTo(-7, 6); g.closePath(); g.fill(); g.stroke(); g.restore(); }   // jump ramps
-    for (const z of zones) { const x = mx(z.x), y = my(z.z); g.fillStyle = z.kind === 'garage' ? '#4f9dff' : '#a283ff'; g.beginPath(); if (z.kind === 'garage') g.rect(x - 7, y - 7, 14, 14); else { g.moveTo(x, y - 10); g.lineTo(x + 9, y); g.lineTo(x, y + 10); g.lineTo(x - 9, y); g.closePath(); } g.fill(); g.stroke(); } }
+    const u = q, m = N / 2 - v.cx * k, mz = N / 2 - v.cz * k;   // the summit mark
+    g.setLineDash([]); g.strokeStyle = 'rgba(243,239,228,0.7)'; g.lineWidth = 2.5 * ls; g.beginPath(); g.moveTo(m - 9 * u, mz + 6 * u); g.lineTo(m - 2 * u, mz - 8 * u); g.lineTo(m + 3 * u, mz - u); g.lineTo(m + 6 * u, mz - 5 * u); g.lineTo(m + 12 * u, mz + 6 * u); g.stroke();
+    g.strokeStyle = '#0e1114'; g.lineWidth = 2.5 * q;
+    for (const r of finds.ramps) { const x = fx(r.x + r.fx * 8), y = fy(r.z + r.fz * 8), a = Math.atan2(-r.fx, -r.fz); g.save(); g.translate(x, y); g.rotate(-a + Math.PI); g.scale(q, q); g.lineWidth = 2.5; g.fillStyle = '#e0662a'; g.beginPath(); g.moveTo(0, -8); g.lineTo(7, 6); g.lineTo(-7, 6); g.closePath(); g.fill(); g.stroke(); g.restore(); }   // jump ramps
+    for (const z of zones) { const x = fx(z.x), y = fy(z.z); g.save(); g.translate(x, y); g.scale(q, q); g.lineWidth = 2.5; g.fillStyle = z.kind === 'garage' ? '#4f9dff' : '#a283ff'; g.beginPath(); if (z.kind === 'garage') g.rect(-7, -7, 14, 14); else { g.moveTo(0, -10); g.lineTo(9, 0); g.lineTo(0, 10); g.lineTo(-9, 0); g.closePath(); } g.fill(); g.stroke(); g.restore(); }
+    return c;
+  }
+  const mapBase = paintBase(MM);
 
   // ---- input, modes ----
   // title: the opening screen. roam: free driving with cargo runs. garage, offer (a race card), race, results.
@@ -430,6 +441,53 @@ function start(hot) {
   for (const ev of ['pointerup', 'pointercancel']) addEventListener(ev, (e) => { PH.pts.delete(e.pointerId); PH.pinch = 0; });
   canvas.addEventListener('wheel', (e) => { if (!PH.on) return; e.preventDefault(); PH.dist = clamp(PH.dist * (1 + Math.sign(e.deltaY) * 0.1), 3.5, 30); $('ph-zoom').value = PH.dist; }, { passive: false });
   // pause menu and settings
+  // ---- big map: tap the corner map (or G, or Map in the menu); tap a place on it to set a marker the arrow points to ----
+  const MAP = { on: false }, navPts = mapPoints(zones, game.sites);
+  const BM = 720, VIEW = mapView(navPts, world.roads, SIZE), BK = BM / VIEW.span, bx = (x) => (VIEW.cx + VIEW.span / 2 - x) * BK, by = (z) => (VIEW.cz + VIEW.span / 2 - z) * BK;
+  let nav = null, bigBase = null;
+  const bmc = $('bm-c'), bctx = bmc.getContext('2d'); bmc.width = bmc.height = BM;
+  function navNote() { $('bm-note').textContent = nav ? `Marker: ${nav.name} · ${distText(Math.hypot(nav.x - car.pos.x, nav.z - car.pos.z))}` : 'Tap a place to set a marker'; $('bm-clear').disabled = !nav; }
+  function drawPin(g, x, y, s) { g.save(); g.translate(x, y); g.scale(s, s); g.fillStyle = '#ff6fae'; g.strokeStyle = '#0e1114'; g.lineWidth = 2.5; g.beginPath(); g.moveTo(0, 0); g.lineTo(-6, -11); g.arc(0, -15, 7.5, Math.PI * 0.8, Math.PI * 0.2); g.closePath(); g.fill(); g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(0, -15, 2.8, 0, Math.PI * 2); g.fill(); g.restore(); }
+  function drawBig() {
+    if (!bigBase) bigBase = paintBase(BM, 1.5, 1.6, VIEW);
+    const g = bctx, job = game.job, racing = mode === 'race' || mode === 'results';
+    g.clearRect(0, 0, BM, BM); g.drawImage(bigBase, 0, 0);
+    const spot = (x, z, r, c) => { g.beginPath(); g.arc(bx(x), by(z), r, 0, Math.PI * 2); g.fillStyle = c; g.fill(); g.lineWidth = 2.5; g.strokeStyle = '#0e1114'; g.stroke(); };
+    if (racing && race) { for (let i = race.gates.length - 1; i >= race.gate; i--) { const gt = race.gates[i]; spot(gt.x, gt.z, i === race.gate ? 11 : 5, i === race.gate ? '#62dcea' : 'rgba(98,220,234,.8)'); } }
+    else for (const st of game.sites) { const isDrop = job && job.to === st, isPick = !job && game.offers.includes(st);
+      if (isDrop || isPick) spot(st.x, st.z, isDrop ? 14 : 11, isDrop ? '#54d17a' : '#f2b33d'); else { g.fillStyle = 'rgba(243,239,228,0.5)'; g.fillRect(bx(st.x) - 4.5, by(st.z) - 4.5, 9, 9); } }
+    g.font = '600 21px "Barlow Condensed", "Arial Narrow", sans-serif'; g.textBaseline = 'bottom'; g.lineJoin = 'round';
+    const boxes = [];
+    for (const z of zones) {      // names over the garages and race starts; under the mark if that spot is taken
+      const name = z.kind === 'garage' ? z.g.name : z.label, x = bx(z.x), w = g.measureText(name).width;
+      const al = x < w / 2 + 8 ? 'left' : x > BM - w / 2 - 8 ? 'right' : 'center', l = al === 'left' ? x - 8 : al === 'right' ? x - w + 8 : x - w / 2;
+      let y = Math.max(26, by(z.z) - 20);
+      const hits = (yy) => boxes.some((b) => l < b.r && l + w > b.l && yy - 21 < b.b && yy > b.t);
+      if (hits(y)) y = by(z.z) + 40; if (hits(y)) y = by(z.z) + 66;
+      boxes.push({ l, r: l + w, t: y - 21, b: y }); g.textAlign = al;
+      g.lineWidth = 5; g.strokeStyle = 'rgba(14,17,20,.85)'; g.strokeText(name, al === 'left' ? x - 8 : al === 'right' ? x + 8 : x, y); g.fillStyle = z.kind === 'garage' ? '#9cc6ff' : '#cdbbff'; g.fillText(name, al === 'left' ? x - 8 : al === 'right' ? x + 8 : x, y);
+    }
+    if (nav) drawPin(g, bx(nav.x), by(nav.z), 1.7);
+    g.save(); g.translate(bx(car.pos.x), by(car.pos.z)); g.rotate(-Math.atan2(car.fwd.x, car.fwd.z)); g.scale(1.6, 1.6); g.fillStyle = '#e04a2f'; g.strokeStyle = '#0e1114'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, -13); g.lineTo(9, 10); g.lineTo(0, 5); g.lineTo(-9, 10); g.closePath(); g.stroke(); g.fill(); g.restore();
+    navNote();
+  }
+  function setNav(m) { nav = m ? { ...m, y: world.sample(m.x, m.z) } : null; if (MAP.on) drawBig(); }
+  function openMap() {
+    if (MAP.on || PH.on) return;
+    if (driving()) pause();
+    if (!paused) return;
+    ui.close(); MAP.on = true; document.body.classList.add('bigmap'); $('bigmap').hidden = false; hush(); drawBig(); focusBtn($('bm-done'));
+  }
+  function closeMap() { if (!MAP.on) return; MAP.on = false; document.body.classList.remove('bigmap'); $('bigmap').hidden = true; resume(); }
+  bmc.addEventListener('click', (e) => {
+    const r = bmc.getBoundingClientRect(); if (!r.width) return;
+    const px = (e.clientX - r.left) / r.width * BM, py = (e.clientY - r.top) / r.height * BM, w = pixelToWorld(px, py, BM, VIEW);
+    setNav(pickPoint(navPts, w.x, w.z, 24 * BM / r.width / BK)); audio.click();
+  });
+  $('bm-clear').addEventListener('click', () => { setNav(null); audio.click(); focusBtn($('bm-done')); });
+  $('bm-done').addEventListener('click', closeMap);
+  $('mapbox').addEventListener('click', () => { if (driving()) openMap(); });
+
   function pause() { if (!driving()) return; paused = true; ui.pause(); setMenu(); }
   function resume() { if (!paused) return; paused = false; ui.close(); setMenu(); canvas.focus(); }
   const setUnits = () => { S().units = metric() ? 'imperial' : 'metric'; store.commit(); };
@@ -483,7 +541,7 @@ function start(hot) {
     toggleUnits: setUnits, toggleMute: setMute, toggleMusic: setMusic, nextWeather: () => { setWeather(WEATHER_MODES[(WEATHER_MODES.indexOf(S().weather) + 1) % WEATHER_MODES.length]); store.commit(); }, ghostTime, setGhost: (on) => { S().ghost = on; store.commit(); }, nextTime: () => { setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); }, toggleFps: () => { showFps = !showFps; if (!showFps) $('fps').textContent = ''; },
     findHints, findCars: () => FIND_IDS,
     toggleTilt: () => setTilt(!S().tilt).then(() => { if (paused) ui.pause(); }), toggleBuzz: () => { S().buzz = !S().buzz; store.commit(); if (S().buzz) buzz(40); },
-    photo: openPhoto,
+    photo: openPhoto, map: openMap,
     testCash: () => { S().cash += 10000; store.commit(); audio.buy(); }, resetProgress,
   });
   titleInfo();
@@ -513,9 +571,10 @@ function start(hot) {
   input.on('time', () => { if (!driving()) return; setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); toast('Time of day: ' + TOD_NAME[S().tod], 1.4); });
   input.on('music', () => { if (!driving()) return; setMusic(); toast(S().music ? 'Music on' : 'Music off', 1.2); });
   input.on('units', () => { if (driving()) setUnits(); });
+  input.on('map', () => { if (MAP.on) closeMap(); else if (driving()) openMap(); });
   input.on('photo', () => { if (driving()) { pause(); openPhoto(); } else if (PH.on) closePhoto(); });
-  input.on('pause', () => { if (PH.on) { if (!$('shot').hidden) $('shot').hidden = true; else closePhoto(); return; } if (paused) resume(); else if (driving()) pause(); else if (mode !== 'title') ui.back(); });
-  input.on('back', () => { if (PH.on) { closePhoto(); return; } if (paused) resume(); else ui.back(); });
+  input.on('pause', () => { if (MAP.on) { closeMap(); return; } if (PH.on) { if (!$('shot').hidden) $('shot').hidden = true; else closePhoto(); return; } if (paused) resume(); else if (driving()) pause(); else if (mode !== 'title') ui.back(); });
+  input.on('back', () => { if (MAP.on) { closeMap(); return; } if (PH.on) { closePhoto(); return; } if (paused) resume(); else ui.back(); });
   input.on('accept', () => { if (mode === 'title') begin(); else ui.accept(); });
   input.on('nav', (dx, dy) => { if (mode !== 'title') ui.nav(dx, dy); });
   input.on('tab', (d) => ui.tab(d));
@@ -624,7 +683,8 @@ function start(hot) {
       else { car.step(STEP, race.input(inp)); race.step(STEP); if (rec && race.state === 'run') rec.sample(race.clock, car.pos, car.quat); if (race.bump > 3) { hit(race.bump + 4); race.bump = 0; } }
       if (car.impact > 6) hit(car.impact);
     }
-    if (mode === 'roam') { game.update(dt); jobEvents(); if (mode === 'roam') zoneCheck(dt); }
+    if (mode === 'roam') { game.update(dt); jobEvents(); if (mode === 'roam') zoneCheck(dt);
+      if (nav && arrived(nav, car.pos.x, car.pos.z)) { toast(nav.kind === 'pin' ? 'You reached your marker' : 'You reached ' + nav.name, 2.4); nav = null; audio.click(); } }
     else if (mode === 'race' || mode === 'results') {
       race.update(dt); raceEvents();
       if (mode === 'race' && race.state === 'done' && (resultsT -= dt) <= 0) { mode = 'results'; ui.results(race, raceNote); setMenu(); }
@@ -737,6 +797,7 @@ function start(hot) {
     };
     pickBeams.forEach((b, i) => lit(b, free && game.offers[i], 9, game.offers[i]));
     lit(dropBeam, !racing && game.job, 9, game.job && game.job.to);
+    lit(navBeam, free && nav && mode === 'roam', 6, nav);
     for (const z of zones) lit(z.beam, free && mode !== 'garage' && mode !== 'title', z.r);
     sky.dome.position.copy(camera.position); sky.time.value = now / 1000;
     camera.getWorldDirection(viewDir); viewDir.y = 0; focus.copy(car.pos).addScaledVector(viewDir.normalize(), SHADOW_R * 0.45);
@@ -777,11 +838,11 @@ function start(hot) {
       if (road) { el.rposLbl.textContent = 'Place'; el.rposN.textContent = race.pos; el.rposD.textContent = '/ ' + (race.rivals.length + 1); }
       else { const md = medals(race.def, race.level), k = md.findIndex((t) => race.t <= t); el.rposLbl.textContent = k >= 0 ? 'Still on for' : 'Medals'; el.rposN.textContent = k >= 0 ? MEDALS[k] : 'Gone'; el.rposD.textContent = k >= 0 ? clock(md[k]) : ''; }
     } else {
-      const tg = game.target();
+      const mk = !job && nav, tg = mk ? nav : game.target();
       if (tg) { el.jobName.textContent = tg.name; el.jobDist.textContent = distText(aim(el.arrow, tg.x, tg.z)); }
       el.job.classList.toggle('hot', !!job); el.job.classList.toggle('chase', !!game.heat);
-      const kind = job ? job.kind : tg ? game.kindOf(tg) : 'freight', tag = kind === 'freight' ? '' : CARGO[kind].name + ' · ';
-      el.jobLabel.textContent = tag + (job ? (game.rival ? (game.rival.dist < Math.hypot(car.pos.x - job.to.x, car.pos.z - job.to.z) ? 'Rival ahead · ' : 'You lead · ') : '') + 'Deliver to' : game.inside ? 'Stop to load' : 'Pick up at');
+      const kind = job ? job.kind : tg && !mk ? game.kindOf(tg) : 'freight', tag = kind === 'freight' ? '' : CARGO[kind].name + ' · ';
+      el.jobLabel.textContent = tag + (job ? (game.rival ? (game.rival.dist < Math.hypot(car.pos.x - job.to.x, car.pos.z - job.to.z) ? 'Rival ahead · ' : 'You lead · ') : '') + 'Deliver to' : mk ? 'Your marker' : game.inside ? 'Stop to load' : 'Pick up at');
       if (job) {
         const t = Math.max(0, Math.ceil(job.left)); el.time.textContent = Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); el.time.classList.toggle('low', t <= 15);
         el.cond.textContent = Math.round(job.cond * 100) + '%'; el.pay.textContent = money(Math.round(job.pay * job.cond / 10) * 10);
@@ -798,6 +859,7 @@ function start(hot) {
         if (isDrop || isPick) dot(st.x, st.z, isDrop ? 11 : 8.5, isDrop ? '#54d17a' : '#f2b33d'); else { mctx.fillStyle = 'rgba(243,239,228,0.45)'; mctx.fillRect(mx(st.x) - 3, my(st.z) - 3, 6, 6); } }
       for (const c of finds.crates) if (!crateGot(c.i) && (car.pos.x - c.x) ** 2 + (car.pos.z - c.z) ** 2 < 250 * 250) dot(c.x, c.z, 4.5, '#f2b33d', true);   // hidden crates close by
       if (game.rival) dot(game.rival.car.pos.x, game.rival.car.pos.z, 5.5, '#d8a03a', true);
+      if (nav) drawPin(mctx, mx(nav.x), my(nav.z), 1.15);
       for (const pt of game.patrols) dot(pt.car.pos.x, pt.car.pos.z, pt.mode === 'block' ? 7 : 5.5, pt.mode === 'block' ? '#ff3b2a' : pt.mode === 'chase' ? (flash ? '#ff3b2a' : '#4d7bff') : '#7fa2e8', true);
     }
     mctx.save(); mctx.translate(mx(car.pos.x), my(car.pos.z)); mctx.rotate(-Math.atan2(car.fwd.x, car.fwd.z)); mctx.fillStyle = '#e04a2f'; mctx.strokeStyle = '#0e1114'; mctx.lineWidth = 3; mctx.beginPath(); mctx.moveTo(0, -13); mctx.lineTo(9, 10); mctx.lineTo(0, 5); mctx.lineTo(-9, 10); mctx.closePath(); mctx.stroke(); mctx.fill(); mctx.restore();
@@ -806,7 +868,7 @@ function start(hot) {
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
-  window.__game = { photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
+  window.__game = { mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },
     get drawn() { const r = renderer.info.render; return { quality, locked, shadows: sun.castShadow, triangles: r.triangles, calls: r.calls, small: smallMeshes.reduce((n, m) => n + m.count, 0), smallShown: smallMeshes.reduce((n, m) => n + (m.visible ? m.count : 0), 0) }; },
     get ghost() { return ghost && { time: ghost.time, n: ghost.n, splits: ghost.splits.length, shown: !!ghostVis && ghostVis.car.visible, pos: ghostVis ? ghostVis.car.position.toArray().map(Math.round) : null }; },

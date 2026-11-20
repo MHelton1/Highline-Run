@@ -277,6 +277,15 @@ body.kid #tg, body.kid #th { display: none; }
 body.photo .hud, body.photo #vig { display: none; }
 #shot { position: absolute; inset: 0; z-index: 8; display: grid; place-items: center; background: rgba(8, 10, 12, .72); padding: 16px; box-sizing: border-box; }
 #shot[hidden] { display: none; }
+#mapbox { pointer-events: auto; cursor: pointer; }
+#bigmap { position: absolute; inset: 0; z-index: 7; display: grid; place-items: center; background: rgba(8, 10, 12, .62); padding: max(10px, env(safe-area-inset-top, 0px)) 12px max(10px, env(safe-area-inset-bottom, 0px)); box-sizing: border-box; }
+#bigmap[hidden] { display: none; }
+#bigmap > .card { padding: 10px; box-sizing: border-box; display: flex; flex-direction: column; gap: 8px; max-width: 100%; max-height: 100%; }
+#bm-c { display: block; width: min(calc(100vw - 48px), calc(100vh - 130px), 720px); height: auto; aspect-ratio: 1; align-self: center; border-radius: 6px; background: rgba(14,17,20,.35); cursor: crosshair; touch-action: manipulation; }
+.bm-top { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; } #bm-note { font: 600 15px var(--display); letter-spacing: .04em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#bigmap .actions { margin: 0; justify-content: center; } #bigmap .side { display: flex; flex-direction: column; gap: 8px; }
+@media (orientation: landscape) and (max-height: 520px) { #bigmap > .card { flex-direction: row; align-items: center; } #bm-c { width: min(calc(100vh - 40px), calc(100vw - 230px)); } #bigmap .bm-top, #bigmap .actions { flex-direction: column; align-items: stretch; } #bigmap .side { width: 180px; } #bm-note { white-space: normal; } #bigmap .actions .btn { flex: 0 0 auto; } }
+body.bigmap .hud { visibility: hidden; }
 #shot > .card { max-width: min(900px, 100%); max-height: 100%; overflow: auto; padding: 12px; box-sizing: border-box; }
 #shot img { display: block; width: 100%; height: auto; border-radius: 6px; -webkit-touch-callout: default; user-select: auto; }
 #shot .actions { margin-top: 10px; } #shot a.btn { text-decoration: none; text-align: center; }
@@ -286,7 +295,7 @@ body.photo .hud, body.photo #vig { display: none; }
   <canvas id="game" tabindex="0" aria-label="Game view"></canvas>
   <div id="vig"></div>
   <div class="hud">
-    <div id="mapbox" class="card"><canvas id="minimap"></canvas><span>N</span></div>
+    <div id="mapbox" class="card" role="button" aria-label="Open the big map"><canvas id="minimap"></canvas><span>N</span></div>
     <div id="job" class="card">
       <div id="arrow">▲</div>
       <div><span id="joblabel" class="lbl">Pick up at</span><span id="jobname">…</span><span id="jobdist"></span></div>
@@ -336,19 +345,24 @@ body.photo .hud, body.photo #vig { display: none; }
     </div>
     <p id="phonote" class="card">Drag to move around the car</p>
   </div>
+  <div id="bigmap" hidden><div class="card">
+    <canvas id="bm-c" aria-label="Map of the region. Tap to set a marker"></canvas>
+    <div class="side"><div class="bm-top"><span class="lbl">Map</span><span id="bm-note">Tap a place to set a marker</span></div>
+    <div class="actions"><button id="bm-clear" type="button" class="btn">Clear marker</button><button id="bm-done" type="button" class="btn primary">Back to driving</button></div></div>
+  </div></div>
   <div id="shot" hidden><div class="card"><img id="shot-img" alt="Your photo"><p class="note">On a phone, press and hold the picture to save it.</p><div class="actions"><a id="shot-dl" class="btn primary" download="highline-run.jpg">Download</a><button id="shot-back" type="button" class="btn">Back</button></div></div></div>
   <div id="modal" hidden><div id="dialog" class="dialog card" role="dialog" aria-modal="true" aria-labelledby="dlg-title"></div></div>
   <div id="start">
     <div class="inner">
       <h1>Highline <em>Run</em></h1>
-      <p>Build 20. New: photo mode (in the menu, or O). Tilt steering on phones, roadblocks on hot runs. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
+      <p>Build 21. New: a big map. Tap the corner map (or press G) and tap any place to drop a marker the arrow will point you to. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
       <dl class="keys card desk">
         <dt>W A S D / arrows</dt><dd>Gas, steer, brake. Hold brake at a stop to reverse.</dd>
         <dt>Space</dt><dd>Handbrake for slides</dd>
         <dt>Stop in a light</dt><dd>Amber loads cargo, green delivers. Blue is a garage, violet a race.</dd>
         <dt>R · F · Esc</dt><dd>Back to the road · flip upright · menu</dd>
-        <dt>O</dt><dd>Photo mode</dd>
-        <dt>Controller</dt><dd>RT gas, LT brake, left stick steer, A handbrake, Y road, X flip, B camera, Start menu</dd>
+        <dt>G · O</dt><dd>Big map and marker · photo mode</dd>
+        <dt>Controller</dt><dd>RT gas, LT brake, left stick steer, A handbrake, Y road, X flip, B camera, Back map, Start menu</dd>
       </dl>
       <dl class="keys card tch">
         <dt>◀ ▶</dt><dd>Steer</dd><dt>GO · ■</dt><dd>Gas · brake (hold at a stop to reverse)</dd><dt>Slide</dt><dd>Handbrake</dd>

@@ -5,7 +5,7 @@ export function createInput(touchRoot, canvas) {
   const held = new Set(), listeners = {};
   let menu = false, navDir = '', navT = 0;
   const fire = (name, a, b) => { if (listeners[name]) listeners[name](a, b); };
-  const actions = { KeyR: 'reset', KeyF: 'flip', KeyC: 'camera', KeyM: 'mute', KeyN: 'music', KeyT: 'time', KeyU: 'units', KeyO: 'photo', KeyE: 'action', Enter: 'action', Escape: 'pause', KeyP: 'pause' };
+  const actions = { KeyR: 'reset', KeyF: 'flip', KeyC: 'camera', KeyM: 'mute', KeyN: 'music', KeyT: 'time', KeyU: 'units', KeyO: 'photo', KeyG: 'map', KeyE: 'action', Enter: 'action', Escape: 'pause', KeyP: 'pause' };
   const NAV = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
   addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -136,7 +136,7 @@ export function createInput(touchRoot, canvas) {
     document.addEventListener('click', (e) => { if (e.isTrusted && performance.now() - ghost.t < 700 && Math.hypot(e.clientX - ghost.x, e.clientY - ghost.y) < 40) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
   }
   // gamepad buttons: Y road, X flip, B camera, Start menu, D-pad up to use a garage or race start; in menus A picks and B goes back
-  const DRIVE = { 3: 'reset', 2: 'flip', 1: 'camera', 9: 'pause', 12: 'action' }, MENU = { 0: 'accept', 1: 'back', 9: 'pause' };
+  const DRIVE = { 3: 'reset', 2: 'flip', 1: 'camera', 9: 'pause', 12: 'action', 8: 'map' }, MENU = { 0: 'accept', 1: 'back', 9: 'pause' };
   const dz = (v) => Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88;
   state.on = (name, fn) => { listeners[name] = fn; };
   state.fire = fire;

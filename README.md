@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 20
+# Highline Run: browser prototype, build 21
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -13,6 +13,7 @@ No rendering (run in plain node, so the tests can drive them):
 
 - `src/regions.js` the regions (mountain, desert, coast): names of roads and places, ground kind, trees, surface names
 
+- `src/nav.js` the big map's marker: which place a tap means (`pickPoint`), arrival, the map's view box
 - `src/terrain.js` world data: heightfield, roads, surface grip table, ground queries, places (cargo sites, garages, race lines)
 - `src/vehicle.js` rigid-body car physics on the heightfield (120 Hz fixed step, gravity 13.2)
 - `src/cars.js` the car catalog (hatch, sprint, buggy, wagon, truck, coupe, trophy, apex; `CAR_IDS` is cheapest first), upgrades, tuning sliders, `buildSpec(id, up, tune)`, `measure()` and `rate()` for showroom numbers
@@ -78,6 +79,8 @@ Pictures for judging the look (not pass or fail):
     node tests/weatherui.cjs [port|desk] [outdir] # weather: menu, storm effects, changing by itself, saved
     node tests/findsui.cjs [port|desk] [outdir]   # hidden finds: a crate, the barn car, a ramp jump, hints, garage
     node tests/cupui.cjs [port|desk] [outdir]     # championship: Cup card, three rounds with points, resume, purse, prize car
+    node tests/nav.mjs                            # marker snapping, arrival, map view box
+    node tests/bigmapui.cjs [port|desk|land] [outdir]   # big map: open from the corner map, mark a garage, pin, arrive, clear
     node tests/photoui.cjs [port|desk] [outdir]   # photo mode: dash hidden, drag to orbit, picture and download, back
     node tests/phoneui.cjs [port|land] [outdir]   # phone extras: tilt steering from the menu (fake tilt readings), buzz
     node tests/heatui.cjs [port|desk] [outdir]    # roadblock and backup on a hot run, getting past, clearing up
@@ -188,6 +191,10 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   `updateCamera` orbits the car (`PH`: drag, pinch, wheel or the Zoom slider). Take photo renders one frame and reads
   the canvas straight away (no preserveDrawingBuffer needed), then shows it with a Download link; on a phone, press
   and hold the picture to save it.
+- Big map (build 21): tap the corner map, G, Back on a controller, or menu "Map". The game pauses, `paintBase(N, ls, q,
+  view)` paints the still map at 720 px over the box `mapView` finds round the roads and places, and a tap sets `nav`
+  (snapped to a garage, race start or cargo site within about 24 screen px). With no cargo on board the direction card
+  points to the marker ("Your marker"), a pink light column stands on it, and driving within 24 m clears it.
 - Cargo rivals steer round a pickup's hut when their way in runs through it (the coast's huts sat on the line in).
 - Kid mode (`src/kid.js`, saved as `kid`): `kidInput()` replaces the pedals so the car drives itself at `KID` speeds
   (22 m/s tarmac, 16 dirt, 12 off road, less in turns); a held brake still stops and reverses. Cargo time x1.4, bust

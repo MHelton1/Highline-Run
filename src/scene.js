@@ -1,7 +1,7 @@
 // Turns world data into Three.js meshes.
 import * as THREE from 'three';
 import { N, V, CELL, HALF, SURF, SIZE as SIZE_ } from './terrain.js';
-import { parts, lam, signTexture, banner } from './kit.js';
+import { parts, lam, signTexture, banner, FONT } from './kit.js';
 
 const lin = (c) => Math.pow(c, 2.2);
 const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
@@ -254,13 +254,13 @@ export function buildProps(world, scene, amount = 1) {
   const span = 2 * HALF - 60, nBush = Math.round((dry ? 30000 : 46000) * amount), nStone = Math.round((dry ? 34000 : 26000) * amount);
   for (let n = 0; n < nBush; n++) {
     const x = (rnd() - 0.5) * span, z = (rnd() - 0.5) * span, v = at(x, z), keep = rnd(), size = rnd(), turn = rnd(), hue = rnd();
-    if (surf[v] !== 2 || roadDist[v] < 8.5 || normals[v * 3 + 1] < 0.8 || snowT[v] > 0.05) continue;
+    if (surf[v] !== 2 || roadDist[v] < 8.5 || normals[v * 3 + 1] < 0.8 || snowT[v] > 0.05 || world.inTown(x, z)) continue;
     if (noise(x / 90 + 7, z / 90 - 3) + noise(x / 23, z / 23 + 11) * 0.5 < 0.18 + keep * 0.35) continue;      // grows in patches
     bin('b', x, z).push({ x, z, y: world.sample(x, z, q), s: 0.55 + size * 0.95, r: turn * TAU, hue, nx: q.nx, nz: q.nz });
   }
   for (let n = 0; n < nStone; n++) {
     const x = (rnd() - 0.5) * span, z = (rnd() - 0.5) * span, v = at(x, z), keep = rnd(), size = rnd(), turn = rnd(), hue = rnd();
-    if (roadDist[v] < 6.5 || snowT[v] > 0.6 || (world.sea != null && heights[v] < world.waterAt(x, z) + 0.5)) continue;
+    if (roadDist[v] < 6.5 || snowT[v] > 0.6 || (world.sea != null && heights[v] < world.waterAt(x, z) + 0.5) || world.inTown(x, z)) continue;
     if (keep > 0.1 + rockT[v] * 0.9 + (roadDist[v] < 16 ? 0.25 : 0) + Math.max(0, noise(x / 60 - 9, z / 60 + 4)) * 0.5) continue;   // mostly on rocky ground and verges
     bin('s', x, z).push({ x, z, y: world.sample(x, z, q), s: 0.3 + size * size * 1.1, r: turn * TAU, hue, nx: q.nx, nz: q.nz });
   }
@@ -406,6 +406,70 @@ export function buildBridges(world, scene) {
   }
   scene.add(group);
   return group;
+}
+// Towns: each building on a stone plinth that meets the slope, walls and roof in the region's style, windows that
+// light up after dark, plus street lamps and a sign at each end. Returns glow(night 0..1) for the windows.
+const TOWN_STYLE = {
+  mountain: { walls: [0x8a6a4a, 0xa88a62, 0xcbbca4, 0x76583c, 0xb9a88a], roofs: [0x3b3f45, 0x5a2e24, 0x34402f], pitch: 0.75, plinth: 0x77736b },
+  desert: { walls: [0xc9a27a, 0xd8b48c, 0xb88a62, 0xe2cba6, 0xc79070], roofs: [0x9a7556, 0xb08a64, 0x7d5f48], pitch: 0, plinth: 0x9a7a5c },
+  coast: { walls: [0xefebe2, 0xd9e4ea, 0xf0d9c4, 0xcfe0d2, 0xece2b8], roofs: [0x9b3a2a, 0x2f4f6f, 0x5a5f66], pitch: 0.5, plinth: 0x8c8a84 },
+};
+function gable(w, d, rh, over = 0.35) {   // a roof: ridge along x, eaves overhanging by `over`
+  const x = w / 2 + over, z = d / 2 + over, p = [];
+  const tri = (a, b, c) => p.push(...a, ...b, ...c), quad = (a, b, c, e) => { tri(a, b, c); tri(a, c, e); };
+  const A = [-x, 0, z], B = [x, 0, z], C = [x, rh, 0], D = [-x, rh, 0], E = [-x, 0, -z], F = [x, 0, -z];
+  quad(A, B, C, D); quad(F, E, D, C); tri(E, A, D); tri(B, F, C); quad(E, F, B, A);
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p, 3)); g.computeVertexNormals(); return g;
+}
+export function buildTowns(world, scene) {
+  if (!world.towns || !world.towns.length) return null;
+  const st = TOWN_STYLE[world.regionDef.ground] || TOWN_STYLE.mountain, b = parts(), mats = new Map();
+  const M = (hex) => { let m = mats.get(hex); if (!m) mats.set(hex, m = lam(hex)); return m; };
+  const win = new THREE.MeshLambertMaterial({ color: 0x26313b, emissive: 0xffc870, emissiveIntensity: 0 }), door = M(0x4a3426), glass = win;
+  const awnings = [0xb3261e, 0x2f6fb5, 0x2f7a4a, 0xd9a02a], pole = M(0x4a5057), lampM = new THREE.MeshBasicMaterial({ color: 0xfff3c4 });
+  for (const t of world.towns) {
+    for (const o of t.buildings) {
+      const wall = M(st.walls[Math.floor(o.wall * st.walls.length)]), roof = M(st.roofs[Math.floor(o.roof * st.roofs.length)]), y0 = o.hi;
+      b.origin(o.x, 0, o.z, o.yaw);
+      b.box(o.w + 0.3, y0 - o.lo + 0.8, o.d + 0.3, M(st.plinth), 0, (y0 + o.lo - 0.8) / 2 + 0.05, 0);
+      b.box(o.w, o.h, o.d, wall, 0, y0 + o.h / 2, 0);
+      const flat = !st.pitch || o.kind === 'shop' || o.kind === 'tall';
+      if (flat) { b.box(o.w + 0.25, 0.5, o.d + 0.25, roof, 0, y0 + o.h + 0.2, 0); }
+      else b.add(gable(o.w, o.d, Math.min(o.d, 9) * st.pitch * 0.5), roof, 0, y0 + o.h, 0);
+      const front = o.d / 2 + 0.04, floors = Math.max(1, Math.round(o.h / 3)), cols = Math.max(1, Math.floor(o.w / 2.8));
+      for (let f = 0; f < floors; f++) for (let c = 0; c < cols; c++) {
+        const x = (c + 0.5) / cols * o.w - o.w / 2, yy = y0 + 1.6 + f * 2.9;
+        if (f === 0 && o.kind === 'shop') continue;
+        if (f === 0 && c === Math.floor(cols / 2) && o.kind !== 'shed') { b.box(1.1, 2.1, 0.1, door, x, y0 + 1.05, front); continue; }
+        if (o.kind === 'shed' && f === 0) { if (c === 0) b.box(Math.min(3.4, o.w * 0.5), 2.6, 0.1, door, 0, y0 + 1.3, front); continue; }
+        b.box(1.1, 1.25, 0.1, win, x, yy, front); b.box(1.1, 1.25, 0.1, win, x, yy, -front);
+      }
+      if (o.kind === 'shop') {
+        b.box(o.w * 0.8, 2.2, 0.1, glass, 0, y0 + 1.4, front);
+        b.box(o.w * 0.9, 0.12, 1.6, M(awnings[Math.floor(o.seed * awnings.length)]), 0, y0 + 2.9, front + 0.8, null, 0.18, 0, 0);
+        b.box(o.w * 0.7, 0.7, 0.12, M(awnings[Math.floor(o.seed * 7) % awnings.length]), 0, y0 + o.h - 0.5, front + 0.02);
+      }
+      if (o.kind === 'tall' && st.pitch) b.box(o.w + 0.4, 0.3, o.d + 0.4, roof, 0, y0 + o.h + 0.55, 0);
+    }
+    for (const l of t.lamps) {
+      b.origin(l.x, l.y, l.z, l.yaw);
+      b.cyl(0.1, 0.13, 6.2, 6, pole, 0, 3.1, 0); b.box(0.12, 0.12, 1.6, pole, 0, 6.1, 0.75); b.box(0.42, 0.14, 0.7, lampM, 0, 6.0, 1.45);
+    }
+    const tex = signTexture(512, 256, (g, w, h) => {
+      g.fillStyle = '#2d5f3e'; g.fillRect(0, 0, w, h); g.strokeStyle = '#f3efe4'; g.lineWidth = 10; g.strokeRect(14, 14, w - 28, h - 28);
+      g.fillStyle = '#f3efe4'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `600 44px ${FONT}`; g.fillText('WELCOME TO', w / 2, 78);
+      let size = 92; g.font = `700 ${size}px ${FONT}`; const tw = g.measureText(t.name.toUpperCase()).width; if (tw > w - 70) { size *= (w - 70) / tw; g.font = `700 ${size}px ${FONT}`; }
+      g.fillText(t.name.toUpperCase(), w / 2, 165);
+    });
+    const face = new THREE.MeshBasicMaterial({ map: tex }), back = M(0x2d5f3e);
+    for (const sg of t.signs) {
+      b.origin(sg.x, sg.y, sg.z, sg.yaw);
+      for (const x of [-1.5, 1.5]) b.box(0.14, 2.6, 0.14, pole, x, 1.3, -0.05);
+      b.box(3.7, 1.9, 0.1, back, 0, 2.4, -0.06); b.plane(3.6, 1.8, face, 0, 2.4, 0.01);
+    }
+  }
+  const made = b.into(scene, true, true);
+  return { meshes: made, glow: (night) => { win.emissiveIntensity = night > 0.25 ? Math.min(0.9, (night - 0.25) * 1.6) : 0; } };
 }
 export function buildSky(scene, renderer, sunDir, SKY = SKIES.mountain) {
   const uni = (env) => ({ top: { value: new THREE.Color(env ? SKY.envTop : SKY.top) }, mid: { value: new THREE.Color(env ? SKY.envMid : SKY.mid) }, hor: { value: new THREE.Color(SKY.hor) }, ground: { value: new THREE.Color(SKY.ground) },

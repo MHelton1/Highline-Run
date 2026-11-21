@@ -1,4 +1,4 @@
-// Draws a region from above to a PNG (via a PPM and ImageMagick): ground height, water, roads, places, rivers.
+// Draws a region from above to a PNG (via a PPM and ImageMagick): ground height, water, roads, places, rivers, towns.
 // usage: REGION=coast node tests/mapimg.mjs out.png [px]
 import { buildWorld, N, V, CELL, HALF } from '../src/terrain.js';
 import { writeFileSync } from 'fs'; import { execSync } from 'child_process';
@@ -15,6 +15,7 @@ for (let py = 0; py < P; py++) for (let px = 0; px < P; px++) {
 const dot = (x, z, col, r = 1) => { const cx = Math.round((x + HALF) * K), cz = Math.round((z + HALF) * K); for (let a = -r; a <= r; a++) for (let b = -r; b <= r; b++) { const X = cx + a, Y = cz + b; if (X >= 0 && Y >= 0 && X < P && Y < P) { const o = (Y * P + X) * 3; img[o] = col[0]; img[o + 1] = col[1]; img[o + 2] = col[2]; } } };
 for (const r of w.roads) for (let i = r.from; i <= r.to; i++) dot(r.x[i], r.z[i], r.surf ? [150, 90, 40] : [30, 30, 30], 0);
 for (const b of w.bridges || []) { const r = w.roads[b.road]; for (let i = b.i0; i <= b.i1; i++) dot(r.x[i], r.z[i], [255, 0, 255], 1); }
+for (const t of w.towns || []) for (const o of t.buildings) dot(o.x, o.z, [235, 235, 235], 1);
 for (const s of w.places.sites) dot(s.x, s.z, [255, 255, 0], 3);
 for (const g of w.places.garages) dot(g.x, g.z, [255, 0, 0], 4);
 for (const g of w.places.trial.gates) dot(g.x, g.z, [0, 255, 255], 3);

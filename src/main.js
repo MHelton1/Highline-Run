@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { buildWorld, SURF, HALF, SIZE } from './terrain.js';
 import { Vehicle, G } from './vehicle.js';
 import { CARS, PAINTS, FIND_IDS, buildSpec, stockTune, PATROL_SPEC } from './cars.js';
-import { buildTerrain, buildRoads, buildTrees, buildProps, buildSea, buildSky, buildFall, GROUND_FX, SKIES, buildSites, buildGarages, buildLines, makeBeam, buildCrates, buildBarn, buildRamps, buildTraps, buildRivers, buildBridges } from './scene.js';
+import { buildTerrain, buildRoads, buildTrees, buildProps, buildSea, buildSky, buildFall, GROUND_FX, SKIES, buildSites, buildGarages, buildLines, makeBeam, buildCrates, buildBarn, buildRamps, buildTraps, buildRivers, buildBridges, buildTowns } from './scene.js';
 import { buildCar, setCarEnv, SHADE } from './carmodel.js';
 import { Game, CARGO, RIVAL_SPEC } from './jobs.js';
 import { buildRaces, Race, MEDALS, PLACES, KID_LEVEL, spotsFor, rankKey, medals } from './race.js';
@@ -82,7 +82,7 @@ function start(hot) {
 
   const sky = buildSky(scene, renderer, sunDir, SK); setCarEnv(sky.env, sky.mirror);
   // ---- time of day: sun (or moon), sky, fog, car reflections, headlights, and how far patrols can see ----
-  const DAY = { t: 0, hour: -1, baked: 13, next: 0 }; let night = 0, headlight = null;
+  const DAY = { t: 0, hour: -1, baked: 13, next: 0 }; let night = 0, headlight = null, townVis = null, townT = 0, inTown = null;
   const UP = new THREE.Vector3(0, 1, 0);
   function makeHeadlight() {     // one spotlight for the player's car, made only when the setting is not plain day
     if (headlight) return;
@@ -102,7 +102,7 @@ function start(hot) {
     scene.fog.color.setHex(fog); scene.fog.near = 260 * W.fogNear; scene.fog.far = 3000 * W.fogFar;
     sky.set(cov || W.tintAmt ? { ...L, top: mixH(L.top, fog, Math.max(cov * 0.6, W.tintAmt * 0.7)), mid: mixH(L.mid, fog, Math.max(cov * 0.7, W.tintAmt * 0.8)), hor: mixH(L.hor, fog, W.tintAmt * 0.85), envTop: mixH(L.envTop, fog, cov * 0.6), envMid: mixH(L.envMid, fog, cov * 0.7),
       cl: scaleH(L.cl, 1 - 0.35 * cov), cs: scaleH(L.cs, 1 - 0.45 * cov), disc: scaleH(L.disc, 1 - 0.92 * cov), cover: cov } : L);
-    night = L.night; game.sight = (1 - 0.4 * night) * W.sight;
+    night = L.night; game.sight = (1 - 0.4 * night) * W.sight; if (townVis) townVis.glow(night);
     world.weatherGrip = W.grip.every((g) => g === 1) ? undefined : W.grip; GROUND_FX.snow.value = W.ground;
     const d = Math.abs(hour - DAY.baked); if (bake || Math.min(d, 24 - d) > 0.45) {   // redraw the reflections now and then, not every frame
       DAY.baked = hour; const { old, dispose } = sky.bake();
@@ -174,7 +174,7 @@ function start(hot) {
   if (S().tod !== 'day') setTime(S().tod);
   if (S().weather !== 'auto') { const f = fixedWeather(S().weather, world.region); if (f && f !== 'clear') { WX.now = WX.from = f; WX.cur = blendWeather(f, f, 1); applyAll(true); } }
   if (!(S().stats[world.region] || {}).v) { bump(S(), world.region, 'v'); store.commit(); }
-  buildTerrain(world, scene); buildSea(world, scene); buildRivers(world, scene); buildRoads(world, scene); buildBridges(world, scene); const treeMeshes = buildTrees(world, scene, shadows), smallMeshes = buildProps(world, scene, coarse ? 0.7 : 1);
+  buildTerrain(world, scene); buildSea(world, scene); buildRivers(world, scene); buildRoads(world, scene); buildBridges(world, scene); townVis = buildTowns(world, scene); if (townVis) townVis.glow(night); const treeMeshes = buildTrees(world, scene, shadows), smallMeshes = buildProps(world, scene, coarse ? 0.7 : 1);
   buildSites(game.sites, scene); buildGarages(garages, scene); buildLines(world, scene, races);
   // ---- hidden finds: crates to pick up, an old car in a shed, and ramps (laid into the ground after the terrain is drawn) ----
   addRamps(world, finds.ramps); buildRamps(world, finds.ramps, scene, RAMP);
@@ -329,6 +329,8 @@ function start(hot) {
       for (let i = 0; i < rv.n; i += 4) i ? g.lineTo(fx(rv.x[i]), fy(rv.z[i])) : g.moveTo(fx(rv.x[i]), fy(rv.z[i]));
       g.stroke();
     }
+    g.fillStyle = 'rgba(214,206,190,0.75)';   // town buildings
+    for (const t of world.towns || []) for (const o of t.buildings) { const s = Math.max(1.5, Math.max(o.w, o.d) * k); g.fillRect(fx(o.x) - s / 2, fy(o.z) - s / 2, s, s); }
     for (const road of world.roads.slice().reverse()) { g.beginPath(); for (let i = road.from; i <= road.to; i += 4) { const x = fx(road.x[i]), y = fy(road.z[i]); i === road.from ? g.moveTo(x, y) : g.lineTo(x, y); } if (road.closed) g.closePath(); g.strokeStyle = road.surf === SURF.ASPHALT ? '#f3efe4' : '#c79a5b'; g.lineWidth = (road.surf === SURF.ASPHALT ? 5 : 3) * ls; if (road.surf !== SURF.ASPHALT) g.setLineDash([7 * ls, 6 * ls]); else g.setLineDash([]); g.stroke(); }
     if (world.sea != null) {         // the sea, tinted blue (sampled once at corner map size, stretched for the big map)
       if (!seaImg) {
@@ -676,6 +678,12 @@ function start(hot) {
       if (isDrop || isPick) spot(st.x, st.z, isDrop ? 14 : 11, isDrop ? '#54d17a' : '#f2b33d'); else { g.fillStyle = 'rgba(243,239,228,0.5)'; g.fillRect(bx(st.x) - 4.5, by(st.z) - 4.5, 9, 9); } }
     g.font = '600 21px "Barlow Condensed", "Arial Narrow", sans-serif'; g.textBaseline = 'bottom'; g.lineJoin = 'round';
     const boxes = [];
+    for (const t of world.towns) {   // town names, in white, beside the town away from the garage name
+      const xs = t.buildings.map((o) => bx(o.x)), zs = t.buildings.map((o) => by(o.z)), x = xs.reduce((a, b) => a + b, 0) / xs.length, w = g.measureText(t.name).width;
+      const y = Math.max(26, Math.min(...zs) - 8), l = Math.max(4, Math.min(BM - w - 4, x - w / 2));
+      boxes.push({ l, r: l + w, t: y - 21, b: y }); g.textAlign = 'left';
+      g.lineWidth = 5; g.strokeStyle = 'rgba(14,17,20,.85)'; g.strokeText(t.name, l, y); g.fillStyle = '#f3efe4'; g.fillText(t.name, l, y);
+    }
     for (const z of zones) {      // names over the garages and race starts; under the mark if that spot is taken
       const name = z.kind === 'garage' ? z.g.name : z.label, x = bx(z.x), w = g.measureText(name).width;
       const al = x < w / 2 + 8 ? 'left' : x > BM - w / 2 - 8 ? 'right' : 'center', l = al === 'left' ? x - 8 : al === 'right' ? x - w + 8 : x - w / 2;
@@ -963,6 +971,11 @@ function start(hot) {
       if (world.sea != null && car.pos.y < world.waterAt(car.pos.x, car.pos.z) - 0.6) {   // into the sea or a river: a splash, then back on the road (or the course)
         seaT += dt; if (seaT > 0.8) { seaT = 0; input.fire('reset'); audio.splash(); toast('Splash! Keep out of the water', 2.2); if (mode === 'roam' && game.job) game.damage(30); }
       } else seaT = 0;
+      if ((townT -= dt) <= 0 && world.towns.length) {   // a town's name as you drive into it
+        townT = 0.5; const t = world.townAt(car.pos.x, car.pos.z);
+        if (t && t !== inTown && mode === 'roam') toast('Entering ' + t.name, 2.2);
+        inTown = t;
+      }
       if (S().kid) {                  // kid mode puts the car back on its wheels, and back on the road when it is stuck
         if (car.up.y < 0.35 && car.speed < 2) { kidUpT += dt; if (kidUpT > 1.5) { kidUpT = 0; car.place(car.pos.x, car.pos.z, Math.atan2(car.fwd.x, car.fwd.z), 1.0); toast('Back on your wheels', 1.2); } } else kidUpT = 0;
         if (inp.throttle > 0.5 && car.speed < 0.8) { kidStuckT += dt; if (kidStuckT > 4) { kidStuckT = 0; input.fire('reset'); } } else kidStuckT = 0;

@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 30
+# Highline Run: browser prototype, build 31
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -108,6 +108,7 @@ Pictures for judging the look (not pass or fail):
     node tests/kidui.cjs [port|land|desk]  # kid mode switch, hidden buttons, menu, race card in the page
     node tests/wheelsui.cjs [outdir]  # front-wheel dirt on 4x4s, tracks on dirt, drawing between physics steps
     node tests/riversui.cjs [outdir]  # coast rivers: driving over both bridges, the railings, a splash in a river, pictures
+    REGION=coast node tests/townsui.cjs [outdir]  # towns: name on entry, solid buildings, pictures by day, night and map
     node tests/garage8.cjs [outdir]  # garage with every car on an upright and a sideways phone (pictures)
     node tests/carshots.cjs [ids] [six|one|two|side|rear|top]  # the car models alone on a pad (bundles tests/viewer/entry.js)
 
@@ -161,6 +162,16 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   `scene.js` `buildRivers` (water ribbon where the river runs above the sea, streaks drifting down) and `buildBridges`
   (deck body, walls, piers). Mountain and desert are byte-identical (no `rivers`). Tests: `tests/riversui.cjs`;
   `tests/mapimg.mjs out.png` draws any region from above (water, roads, bridges, places) for checking a layout.
+- Towns (build 31, Michael asked 2026-11-21 "Can we add some towns to the maps?"): a region's `towns` names (two)
+  become `world.towns`, one round each garage along 230 m of ring road each way: two rows of buildings a side
+  (front row from hw + 14 m), kinds house, shop, tall, shed, each on its own plinth so the ground is not reshaped,
+  none on the outside of a bend tighter than about 320 m (run-off room) or near huts, garage yards, start lines and
+  checkpoints. Buildings are solid (`addCollider` rows); lamps and signs are not. `world.inTown` keeps trees (same
+  random draws, so every other tree stays put), bushes and stones out; `world.townAt` drives the "Entering ..."
+  toast. `scene.js` `buildTowns` (styles per ground in `TOWN_STYLE`, `glow(night)` lights windows). Big map and corner
+  map show buildings and names. `buildWorld(region, { towns: false })` leaves them out: `laps.mjs` (so `cars.mjs`)
+  uses that, because its keyboard robots wander far off the road at 100 mph. Tests: `tests/townsui.cjs`,
+  `TEST=tests/x.mjs node tests/notowns.mjs` runs any node test without towns.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

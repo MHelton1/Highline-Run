@@ -166,6 +166,43 @@ export function buildWorld(regionId = 'mountain') {
     }
   };
 
+  // ---- rivers (only regions that list them): a centre line from the mouth out in the sea up into the hills, a width,
+  // and a water level that climbs from the sea inland no faster than a steep stream. The valleys are cut into the
+  // ground once the roads are in, so the roads keep their line and cross on bridges.
+  const rivers = (RG.rivers || []).map((def, k) => {
+    let s = resample(catmull(def.pts, false, 30), false, 4);
+    const wig = [];                    // a gentle meander on top of the drawn line
+    for (let i = 0; i < s.n; i++) {
+      const a = Math.max(0, i - 1), b = Math.min(s.n - 1, i + 1); let tx = s.x[b] - s.x[a], tz = s.z[b] - s.z[a]; const l = Math.hypot(tx, tz); tx /= l; tz /= l;
+      const off = 30 * noise2(i * s.ds / 240 + k * 7.3, 3.7 + k) * smooth(i / 15);
+      wig.push([s.x[i] + tz * off, s.z[i] - tx * off]);
+    }
+    s = resample(wig, false, 4);
+    const n = s.n, hw = new Float32Array(n), depth = new Float32Array(n), floor = new Float32Array(n), wl = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      hw[i] = (6 + 9 * (1 - t)) * (0.35 + 0.65 * (1 - smooth((t - 0.86) / 0.14))); depth[i] = 1.2 + 1.6 * (1 - t);
+      const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1); let tx = s.x[b] - s.x[a], tz = s.z[b] - s.z[a]; const l = Math.hypot(tx, tz); tx /= l; tz /= l;
+      let m = 1e9; for (const f of [-1, -0.5, 0, 0.5, 1]) m = Math.min(m, natural(s.x[i] + tz * f * (hw[i] + 14), s.z[i] - tx * f * (hw[i] + 14)));
+      floor[i] = m;
+    }
+    blur(floor, 6, false, 2);
+    for (let i = 0; i < n; i++) wl[i] = i === 0 ? SEA : Math.min(wl[i - 1] + s.ds * 0.12, Math.max(wl[i - 1], floor[i] - 3.5));
+    blur(wl, 4, false, 2); for (let i = 1; i < n; i++) wl[i] = Math.max(wl[i], wl[i - 1], SEA);
+    return { ...s, name: def.name, hw, depth, wl, floor };
+  });
+  // a road crossing a river stays well clear of the water: lift it there and smooth the lift out along the road
+  const clearRivers = (s, h, closed, ends) => {   // (only the lift is smoothed, so the road elsewhere is untouched)
+    if (!rivers.length) return;
+    const need = new Float32Array(s.n).fill(-1e9);
+    for (let i = 0; i < s.n; i++) for (const rv of rivers) for (let j = 0; j < rv.n; j += 2) {
+      const d = Math.hypot(rv.x[j] - s.x[i], rv.z[j] - s.z[i]); if (d < rv.hw[j] + 60) need[i] = Math.max(need[i], rv.wl[j] + 6 - Math.max(0, d - rv.hw[j] - 20) * 0.12);
+    }
+    const lift = new Float32Array(s.n), gap = (i) => Math.max(0, need[i] - h[i]);
+    for (let k = 0; k < 4; k++) { for (let i = 0; i < s.n; i++) lift[i] = Math.max(lift[i], gap(i)); blur(lift, 20, closed, 1, ends && [0, 0]); }
+    for (let i = 0; i < s.n; i++) h[i] += Math.max(lift[i], gap(i));
+  };
+
   // main loop road (asphalt)
   {
     const K = 18, cps = [];
@@ -179,6 +216,7 @@ export function buildWorld(regionId = 'mountain') {
     for (let i = 0; i < s.n; i++) h[i] = natural(s.x[i], s.z[i]);
     blur(h, 70, true, 3); limitSlope(h, s.ds, 0.09, true); blur(h, 12, true, 2);
     if (SEA !== null) for (let k = 0; k < 3; k++) { for (let i = 0; i < s.n; i++) h[i] = Math.max(h[i], SEA + 4); blur(h, 25, true, 1); }   // the coast road stays above the water
+    clearRivers(s, h, true);
     roads.push({ ...s, h, closed: true, hw: 5, surf: SURF.ASPHALT, blend: 210, name: RG.ring });
   }
   // dirt trail over the central shoulder
@@ -200,6 +238,7 @@ export function buildWorld(regionId = 'mountain') {
     for (let i = 0; i < s.n; i++) { const [d, rh] = ringAt(s.x[i], s.z[i]); h[i] = d < 17 ? rh : natural(s.x[i], s.z[i]); if (d < 17) { if (i < s.n / 2) k0 = i; else if (k1 === s.n - 1) k1 = i; } }
     const mid = h.slice(k0, k1 + 1), pin = [h[k0], h[k1]];
     blur(mid, 30, false, 3, pin); limitSlope(mid, s.ds, 0.2, false, pin); blur(mid, 8, false, 2, pin);
+    if (rivers.length) { const sub = { x: s.x.subarray(k0, k1 + 1), z: s.z.subarray(k0, k1 + 1), n: mid.length }; clearRivers(sub, mid, false, pin); }
     h.set(mid, k0);
     roads.push({ ...s, h, closed: false, hw: 3.5, surf: SURF.DIRT, blend: 95, name: RG.trail });
   }
@@ -300,6 +339,33 @@ export function buildWorld(regionId = 'mountain') {
     if (wSum > 0) heights[v] = heights[v] * keep + (tSum / wSum) * (1 - keep);
   }
 
+  // Cut the river valleys: a channel, a low bank either side, then valley sides of about 22 degrees up to the ground.
+  // Where that cuts away the ground under a road, the road is left on a bridge. wetH is each point's water level.
+  const wetH = rivers.length ? new Float32Array(V * V).fill(-1e9) : null, under = rivers.length ? new Uint8Array(V * V) : null;
+  if (rivers.length) {
+    const RR = 240, R = Math.ceil(RR / CELL), d2 = new Float32Array(V * V).fill(RR * RR), near = new Int32Array(V * V).fill(-1), which = new Int8Array(V * V);
+    rivers.forEach((rv, k) => {
+      for (let s = 0; s < rv.n; s++) {
+        const px = rv.x[s], pz = rv.z[s], ci = Math.round((px + HALF) / CELL), cj = Math.round((pz + HALF) / CELL);
+        for (let j = Math.max(0, cj - R); j <= Math.min(N, cj + R); j++) {
+          const dz = j * CELL - HALF - pz, row = j * V;
+          for (let i = Math.max(0, ci - R); i <= Math.min(N, ci + R); i++) {
+            const dx = i * CELL - HALF - px, dd = dx * dx + dz * dz;
+            if (dd < d2[row + i]) { d2[row + i] = dd; near[row + i] = s; which[row + i] = k; }
+          }
+        }
+      }
+    });
+    for (let v = 0; v < V * V; v++) {
+      if (near[v] < 0) continue;
+      const rv = rivers[which[v]], s = near[v], d = Math.sqrt(d2[v]), w = rv.hw[s], e = d - w;
+      const tgt = e < 0 ? rv.wl[s] - 0.25 - rv.depth[s] * (1 - (d / w) ** 2) : rv.wl[s] - 0.25 + 2.8 * smooth(e / 9) + Math.max(0, e - 6) * 0.4;
+      if (tgt < heights[v]) { if (roadDist[v] < 14 && heights[v] - tgt > 1.5) under[v] = 1; heights[v] = tgt; }
+      if (e < 14) wetH[v] = rv.wl[s];
+    }
+  }
+  const wetV = (v) => wetH && wetH[v] > SEA ? wetH[v] : SEA;
+
   // ---- which ground can a car get to from the roads without tackling anything steeper than about 25 degrees? ----
   const RC = 3, RN = N / RC, reach = new Uint8Array(RN * RN), steepR = new Float32Array(RN * RN);
   {
@@ -308,10 +374,10 @@ export function buildWorld(regionId = 'mountain') {
     for (let j = 0; j < RN; j++) for (let i = 0; i < RN; i++) {
       let m = 0;
       for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) { const vi = i * RC + a, vj = j * RC + b; m = Math.max(m, Math.hypot(hv(vi + 1, vj) - hv(vi - 1, vj), hv(vi, vj + 1) - hv(vi, vj - 1)) / (2 * CELL)); }
-      steepR[j * RN + i] = SEA !== null && hv(i * RC, j * RC) < SEA + 0.6 ? 9 : m;     // the sea counts as a wall
+      steepR[j * RN + i] = SEA !== null && hv(i * RC, j * RC) < wetV(Math.min(N, j * RC) * V + Math.min(N, i * RC)) + 0.6 ? 9 : m;     // the sea (and a river) counts as a wall
     }
     const queue = [];
-    for (let j = 0; j < RN; j++) for (let i = 0; i < RN; i++) if (roadDist[j * RC * V + i * RC] < 8) { reach[j * RN + i] = 1; queue.push(j * RN + i); }
+    for (let j = 0; j < RN; j++) for (let i = 0; i < RN; i++) if (roadDist[j * RC * V + i * RC] < 8 && !(under && under[j * RC * V + i * RC])) { reach[j * RN + i] = 1; queue.push(j * RN + i); }
     for (let q = 0; q < queue.length; q++) {
       const c = queue[q], ci = c % RN, cj = (c / RN) | 0;
       for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
@@ -372,7 +438,7 @@ export function buildWorld(regionId = 'mountain') {
     const x = i * CELL - HALF, z = j * CELL - HALF, h = heights[v];
     rockT[v] = 1 - smooth((il - 0.72) / 0.13);
     snowT[v] = smooth((h + 34 * noise2(x / 90, z / 90) - (snowline - 22)) / 44) * smooth((il - 0.5) / 0.22);
-    surf[v] = roadDist[v] < 9 ? SURF.DIRT : SEA !== null && h < SEA + 2.5 ? SURF.DIRT : snowT[v] > 0.5 ? SURF.SNOW : rockT[v] > 0.5 ? SURF.ROCK : SURF.GRASS;
+    surf[v] = roadDist[v] < 9 ? SURF.DIRT : SEA !== null && h < wetV(v) + 2.5 ? SURF.DIRT : snowT[v] > 0.5 ? SURF.SNOW : rockT[v] > 0.5 ? SURF.ROCK : SURF.GRASS;
   }
 
   // trim the trail where it overlaps the ring road
@@ -384,8 +450,38 @@ export function buildWorld(regionId = 'mountain') {
 
   const world = { region: regionId, regionDef: RG, sea: SEA, heights, normals, surf, snowT, rockT, roadDist, roads, noise: noise2, seed, trees: [], treeHash: new Map(), places, frame, half: HALF, reach, reachN: RN, steepR };
 
+  world.rivers = rivers;
+  // the water level here: the sea, or a river's surface where it runs above the sea (null: a region without water)
+  world.waterAt = (x, z) => {
+    if (SEA === null) return null;
+    if (!wetH) return SEA;
+    const i = Math.max(0, Math.min(N, Math.round((x + HALF) / CELL))), j = Math.max(0, Math.min(N, Math.round((z + HALF) / CELL)));
+    return wetV(j * V + i);
+  };
+  // ground height from the grid alone (under a bridge this is the valley floor, not the deck)
+  const gridAt = (x, z) => {
+    let gx = (x + HALF) / CELL, gz = (z + HALF) / CELL; gx = Math.max(0, Math.min(N - 1e-4, gx)); gz = Math.max(0, Math.min(N - 1e-4, gz));
+    const i = gx | 0, j = gz | 0, fx = gx - i, fz = gz - j, v = j * V + i;
+    return (heights[v] * (1 - fx) + heights[v + 1] * fx) * (1 - fz) + (heights[v + V] * (1 - fx) + heights[v + V + 1] * fx) * fz;
+  };
+  world.ground = gridAt;
+  // bridges: stretches of road standing more than a metre over the ground below
+  world.bridges = [];
+  if (rivers.length) roads.forEach((road, r) => {
+    let run = null;
+    const flush = () => {
+      if (!run) return;
+      const b = { road: r, i0: Math.max(road.from, run[0] - 3), i1: Math.min(road.to, run[1] + 3) }; world.bridges.push(b); run = null;
+      road.deck = road.deck || new Uint8Array(road.n); for (let i = b.i0; i <= b.i1; i++) road.deck[i] = 1;
+    };
+    for (let i = road.from; i <= road.to; i++) {
+      if (road.h[i] - gridAt(road.x[i], road.z[i]) > 1) { if (run && i - run[1] <= 4) run[1] = i; else { flush(); run = [i, i]; } }
+    }
+    flush();
+  });
+
   // project a point onto a road near sample s; returns lateral distance, writes height + tangent
-  const proj = { h: 0, tx: 0, tz: 1, slope: 0, d: 0, px: 0, pz: 0 };
+  const proj = { h: 0, tx: 0, tz: 1, slope: 0, d: 0, px: 0, pz: 0, i: 0 };
   const RAMP = 1.6;   // metres of embankment between the road surface and the ground beside it
   function projectRoad(road, s, x, z) {
     let best = 1e9;
@@ -396,7 +492,7 @@ export function buildWorld(regionId = 'mountain') {
       const ax = road.x[a], az = road.z[a], ex = road.x[b] - ax, ez = road.z[b] - az, l2 = ex * ex + ez * ez;
       let t = ((x - ax) * ex + (z - az) * ez) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
       const d = Math.hypot(x - ax - ex * t, z - az - ez * t);
-      if (d < best) { best = d; const l = Math.sqrt(l2); proj.h = road.h[a] + (road.h[b] - road.h[a]) * t; proj.tx = ex / l; proj.tz = ez / l; proj.slope = (road.h[b] - road.h[a]) / l; proj.px = ax + ex * t; proj.pz = az + ez * t; }
+      if (d < best) { best = d; const l = Math.sqrt(l2); proj.h = road.h[a] + (road.h[b] - road.h[a]) * t; proj.tx = ex / l; proj.tz = ez / l; proj.slope = (road.h[b] - road.h[a]) / l; proj.px = ax + ex * t; proj.pz = az + ez * t; proj.i = a; }
     }
     proj.d = best; return best;
   }
@@ -414,7 +510,7 @@ export function buildWorld(regionId = 'mountain') {
       if (s < 0) continue;
       const hw = roads[r].hw, d = projectRoad(roads[r], s, x, z);
       if (d >= hw + RAMP) continue;
-      const t = d <= hw ? 0 : (d - hw) / RAMP;
+      const t = d <= hw || (roads[r].deck && roads[r].deck[proj.i]) ? 0 : (d - hw) / RAMP;   // a bridge deck stays flat out to its walls
       if (out) {
         let gx = proj.tx * proj.slope, gz = proj.tz * proj.slope;
         if (t > 0) { const k = (hGrid - proj.h) / RAMP / d; gx += (x - proj.px) * k; gz += (z - proj.pz) * k; }
@@ -449,7 +545,7 @@ export function buildWorld(regionId = 'mountain') {
       const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL), v = j * V + i;
       if (surf[v] !== SURF.GRASS || roadDist[v] < 16 || normals[v * 3 + 1] < 0.86) continue;
       const h = world.sample(x, z, q);
-      if (h > treeline - rnd() * 50 || (SEA !== null && h < SEA + 4)) continue;
+      if (h > treeline - rnd() * 50 || (SEA !== null && h < world.waterAt(x, z) + 4)) continue;
       if (noise2(x / 260 + 40, z / 260) < -0.25 + rnd() * 0.3) continue;
       const t = { x, z, y: h, s: 0.75 + rnd() * 0.9, r: rnd() * 6.28 };
       world.trees.push(t);
@@ -477,6 +573,14 @@ export function buildWorld(regionId = 'mountain') {
     for (const sg of [-1, 1]) world.addCollider(f.x + f.lx * sg * (road.hw + 1.7), f.z + f.lz * sg * (road.hw + 1.7), 1.2);
   }
   { const t = places.trial; t.y = world.sample(t.x, t.z); for (const g of t.gates) g.y = world.sample(g.x, g.z); }
+  // bridge railings: a row of overlapping round stops just outside each edge, solid only at deck height
+  for (const b of world.bridges) {
+    const road = roads[b.road];
+    for (let i = b.i0; i <= b.i1; i++) {
+      const f = frame(road, i);
+      for (const sg of [-1, 1]) { const t = world.addCollider(f.x + f.lx * sg * (road.hw + 2.0), f.z + f.lz * sg * (road.hw + 2.0), 2.1); t.y = f.h; t.lo = f.h - 3; }
+    }
+  }
   world.spawn = () => { const g = places.garages[0]; return { x: g.x, z: g.z, h: g.y, yaw: g.yaw }; };
   return world;
 }

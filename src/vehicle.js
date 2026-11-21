@@ -260,7 +260,7 @@ export class Vehicle {
         const list = hash.get((cx + a) * 4096 + cz + b); if (!list) continue;
         for (const t of list) {
           const dx = this.pos.x - t.x, dz = this.pos.z - t.z, d = Math.hypot(dx, dz), r = t.rad ?? 1.25 + 0.2 * t.s;
-          if (d >= r || d < 1e-4 || this.pos.y - t.y > 4) continue;
+          if (d >= r || d < 1e-4 || this.pos.y - t.y > 4 || (t.lo !== undefined && this.pos.y < t.lo)) continue;
           const nx = dx / d, nz = dz / d, vn = this.vel.x * nx + this.vel.z * nz;
           this.pos.x += nx * (r - d); this.pos.z += nz * (r - d);
           if (vn < 0) { this.vel.x -= nx * vn * 1.25; this.vel.z -= nz * vn * 1.25; this.vel.multiplyScalar(0.8); this.angVel.y += (nx * fwd.z - nz * fwd.x) * vn * 0.25; if (-vn > this.impact) this.impact = -vn; }

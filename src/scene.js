@@ -76,7 +76,7 @@ export function buildTerrain(world, scene) {
       let c = mix(gA, gB, n1 * 0.7 + n2 * 0.3);
       c = mix(c, tundra, sm((h - tH) / 60));
       c = mix(c, dry ? mix(mix(rA, rB, 0.5 + 0.5 * Math.sin(h / 4.2 + n1 * 2.2)), [0.86, 0.72, 0.56], sm((Math.sin(h / 11 + 1.3) - 0.82) / 0.1) * 0.7) : mix(rA, rB, n2), rockT[v]);
-      if (sea != null) { c = mix(c, [0.82, 0.74, 0.56], 1 - sm((h - sea - 1.5) / 2.5)); c = mix(c, [0.36, 0.42, 0.40], 1 - sm((h - sea + 2) / 3)); }   // beach sand, then the sea floor
+      if (sea != null) { const wl = world.waterAt(x, z); c = mix(c, [0.82, 0.74, 0.56], 1 - sm((h - wl - 1.5) / 2.5)); c = mix(c, [0.36, 0.42, 0.40], 1 - sm((h - wl + 2) / 3)); }   // beach sand (or a river's gravel), then the floor under the water
       c = mix(c, gravel, 1 - sm((roadDist[v] - 7) / 7));
       c = mix(c, snow, snowT[v]);
       const shade = 0.9 + 0.2 * n2;
@@ -260,7 +260,7 @@ export function buildProps(world, scene, amount = 1) {
   }
   for (let n = 0; n < nStone; n++) {
     const x = (rnd() - 0.5) * span, z = (rnd() - 0.5) * span, v = at(x, z), keep = rnd(), size = rnd(), turn = rnd(), hue = rnd();
-    if (roadDist[v] < 6.5 || snowT[v] > 0.6 || (world.sea != null && heights[v] < world.sea + 0.5)) continue;
+    if (roadDist[v] < 6.5 || snowT[v] > 0.6 || (world.sea != null && heights[v] < world.waterAt(x, z) + 0.5)) continue;
     if (keep > 0.1 + rockT[v] * 0.9 + (roadDist[v] < 16 ? 0.25 : 0) + Math.max(0, noise(x / 60 - 9, z / 60 + 4)) * 0.5) continue;   // mostly on rocky ground and verges
     bin('s', x, z).push({ x, z, y: world.sample(x, z, q), s: 0.3 + size * size * 1.1, r: turn * TAU, hue, nx: q.nx, nz: q.nz });
   }
@@ -342,6 +342,70 @@ export function buildSea(world, scene) {
   const m = new THREE.Mesh(new THREE.PlaneGeometry(16000, 16000).rotateX(-Math.PI / 2), new THREE.MeshPhongMaterial({ color: 0x1d6a86, specular: 0x8fb4c8, shininess: 70, transparent: true, opacity: 0.88, depthWrite: false }));
   m.position.y = world.sea; m.renderOrder = 1; scene.add(m);
   return m;
+}
+// Rivers: a ribbon of water along each river where it runs above the sea (lower down the sea sheet fills the channel),
+// with faint streaks drifting downstream.
+export function buildRivers(world, scene) {
+  if (!world.rivers || !world.rivers.length) return null;
+  const c = document.createElement('canvas'); c.width = 64; c.height = 256;
+  const g = c.getContext('2d'), rnd = rng(911);
+  g.fillStyle = '#2b7c8e'; g.fillRect(0, 0, 64, 256);
+  for (let i = 0; i < 70; i++) { g.fillStyle = `rgba(220,240,245,${0.05 + rnd() * 0.12})`; g.fillRect(rnd() * 64, rnd() * 256, 1 + rnd() * 2, 10 + rnd() * 40); }
+  const tex = new THREE.CanvasTexture(c); tex.wrapS = tex.wrapT = THREE.RepeatWrapping; tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshPhongMaterial({ map: tex, specular: 0x8fb4c8, shininess: 70, transparent: true, opacity: 0.9, depthWrite: false });
+  const group = new THREE.Group();
+  for (const rv of world.rivers) {
+    let a = 0; while (a < rv.n - 2 && rv.wl[a + 1] <= world.sea + 0.02) a++;
+    const pos = [], uv = [], idx = [];
+    for (let i = a, k = 0; i < rv.n; i++, k++) {
+      const p = Math.max(0, i - 1), q = Math.min(rv.n - 1, i + 1); let tx = rv.x[q] - rv.x[p], tz = rv.z[q] - rv.z[p]; const l = Math.hypot(tx, tz); tx /= l; tz /= l;
+      const w = rv.hw[i] + 6, y = Math.max(rv.wl[i], world.sea + 0.03), v = i * rv.ds / 18;
+      pos.push(rv.x[i] + tz * w, y, rv.z[i] - tx * w, rv.x[i] - tz * w, y, rv.z[i] + tx * w); uv.push(0, v, (2 * w) / 18, v);
+      if (i < rv.n - 1) { const b = k * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+    }
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx); geo.computeVertexNormals();
+    const m = new THREE.Mesh(geo, mat); m.renderOrder = 1; m.material.side = THREE.DoubleSide; group.add(m);
+  }
+  let last = performance.now();
+  group.children[0].onBeforeRender = () => { const t = performance.now(); tex.offset.y += (t - last) / 1000 * 0.12; last = t; };   // drift towards the sea
+  scene.add(group);
+  return group;
+}
+
+// Bridges: a concrete deck under the road, a low wall along each edge and piers down to the valley floor.
+export function buildBridges(world, scene) {
+  if (!world.bridges || !world.bridges.length) return null;
+  const group = new THREE.Group(), concrete = new THREE.MeshLambertMaterial({ color: 0xa8a49a, side: THREE.DoubleSide }), wallMat = new THREE.MeshLambertMaterial({ color: 0xc9c5ba, side: THREE.DoubleSide });
+  const piers = [];
+  for (const b of world.bridges) {
+    const road = world.roads[b.road], hw = road.hw, deck = [], dIdx = [], wall = [], wIdx = [];
+    for (let i = b.i0, k = 0; i <= b.i1; i++, k++) {
+      const f = world.frame(road, i), y = f.h + 0.03, L = (d, h) => [f.x + f.lx * d, y + h, f.z + f.lz * d];
+      // deck body: left side, bottom, right side
+      deck.push(...L(hw + 1.25, -0.85), ...L(hw + 1.25, -1.7), ...L(-hw - 1.25, -1.7), ...L(-hw - 1.25, -0.85));
+      // walls: outer face, top, inner face, for each side
+      for (const sg of [1, -1]) wall.push(...L(sg * (hw + 1.25), -0.9), ...L(sg * (hw + 1.25), 0.85), ...L(sg * (hw + 0.85), 0.85), ...L(sg * (hw + 0.85), -0.1));
+      if (i < b.i1) {
+        const d0 = k * 4; for (let s = 0; s < 3; s++) dIdx.push(d0 + s, d0 + s + 1, d0 + s + 4, d0 + s + 1, d0 + s + 5, d0 + s + 4);
+        const w0 = k * 8; for (const o of [0, 4]) for (let s = 0; s < 3; s++) wIdx.push(w0 + o + s, w0 + o + s + 1, w0 + o + s + 8, w0 + o + s + 1, w0 + o + s + 9, w0 + o + s + 8);
+      }
+      // a pier every 26 m where the ground is well below
+      const drop = f.h - world.ground(f.x, f.z);
+      if ((i - b.i0) % 13 === 6 && drop > 3.5) piers.push({ x: f.x, z: f.z, yaw: f.yaw, top: f.h - 1.7, bottom: f.h - drop - 1.5, w: 2 * hw + 1 });
+    }
+    for (const [arr, ix, mat] of [[deck, dIdx, concrete], [wall, wIdx, wallMat]]) {
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); geo.setIndex(ix); geo.computeVertexNormals();
+      const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; group.add(m);
+    }
+  }
+  if (piers.length) {
+    const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), inst = new THREE.InstancedMesh(box, concrete, piers.length), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
+    piers.forEach((p, k) => { q.setFromAxisAngle(up, p.yaw); m4.compose(new THREE.Vector3(p.x, p.bottom, p.z), q, new THREE.Vector3(p.w, p.top - p.bottom, 1.8)); inst.setMatrixAt(k, m4); });
+    inst.castShadow = true; inst.receiveShadow = true; group.add(inst);
+  }
+  scene.add(group);
+  return group;
 }
 export function buildSky(scene, renderer, sunDir, SKY = SKIES.mountain) {
   const uni = (env) => ({ top: { value: new THREE.Color(env ? SKY.envTop : SKY.top) }, mid: { value: new THREE.Color(env ? SKY.envMid : SKY.mid) }, hor: { value: new THREE.Color(SKY.hor) }, ground: { value: new THREE.Color(SKY.ground) },

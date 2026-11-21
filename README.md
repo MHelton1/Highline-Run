@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 28
+# Highline Run: browser prototype, build 30
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -54,6 +54,7 @@ Plain node, from this folder:
 
     node tests/save.test.mjs      # save repair, migration from build 2, account sync and conflict rules
     node tests/placement.mjs      # the car settles upright anywhere along the roads and in open country
+    REGION=coast node tests/mapimg.mjs map.png   # the region from above, to check a layout by eye
     node tests/jobs.mjs           # cargo run, patrol chase, bust, delivery
     node tests/cargo.mjs          # cargo kinds: pay and time, fragile loads breaking, hot loads, the rival's pace on every route
     node tests/stop.mjs           # a stop made on the brake holds long enough for a light to open; finished sprint rivals park
@@ -105,6 +106,8 @@ Pictures for judging the look (not pass or fail):
     node tests/phone.mjs         # tilt steering math for every screen angle and both sign conventions
     node tests/heat.mjs          # roadblocks: placed ahead with a gap a car fits, busting, chasing once passed, backup
     node tests/kidui.cjs [port|land|desk]  # kid mode switch, hidden buttons, menu, race card in the page
+    node tests/wheelsui.cjs [outdir]  # front-wheel dirt on 4x4s, tracks on dirt, drawing between physics steps
+    node tests/riversui.cjs [outdir]  # coast rivers: driving over both bridges, the railings, a splash in a river, pictures
     node tests/garage8.cjs [outdir]  # garage with every car on an upright and a sideways phone (pictures)
     node tests/carshots.cjs [ids] [six|one|two|side|rear|top]  # the car models alone on a pad (bundles tests/viewer/entry.js)
 
@@ -146,6 +149,18 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   above it, ground under water counts as a wall for routes (`steepR`), beaches are dirt, and `scene.js` draws one
   see-through plane. A car more than 0.6 m under the surface for 0.8 s is put back on the road (and a cargo load takes
   damage). Coast race ids: `coast`, `coastb`, `coastx`, `ridge`, `ridgeb`, `cliffs`. The dash height is above sea level.
+- Coast rivers and bridges (build 30, Michael asked 2026-11-21 for "bridges and water features running through the map"):
+  a region's `rivers` list (x, z points from the mouth out at sea up into the hills) becomes `world.rivers` (centre line
+  every 4 m, half width `hw`, `depth`, water level `wl` that climbs from the sea no faster than 12%). Roads are laid
+  first (`clearRivers` lifts a road at least 6 m over a crossing, smoothing only the lift), then the valleys are cut
+  into the stamped ground: channel, low bank, 0.4 slopes. Road stretches left more than 1 m over the ground become
+  `world.bridges` ({road, i0, i1}); `road.deck` marks their samples so `world.sample` keeps the deck flat out to the
+  walls, and a row of `addCollider` stops (radius 2.1, `lo` = deck − 3, so nothing below hits them) is the railing.
+  `world.waterAt(x, z)` is the water level there (sea or river) and replaces `world.sea` in every wet check (splash
+  reset, map tint, trees, props, finds, shore sound); `world.ground(x, z)` is the grid height under a deck.
+  `scene.js` `buildRivers` (water ribbon where the river runs above the sea, streaks drifting down) and `buildBridges`
+  (deck body, walls, piers). Mountain and desert are byte-identical (no `rivers`). Tests: `tests/riversui.cjs`;
+  `tests/mapimg.mjs out.png` draws any region from above (water, roads, bridges, places) for checking a layout.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

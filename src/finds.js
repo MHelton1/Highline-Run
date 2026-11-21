@@ -54,7 +54,7 @@ export function placeFinds(world, races = []) {
   const road = (x, z) => world.roadDist[Math.max(0, Math.min(V - 1, Math.round((z + HALF) / CELL))) * V + Math.max(0, Math.min(V - 1, Math.round((x + HALF) / CELL)))];
   // gentle, reachable ground here and for r metres around
   const easy = (x, z, lim, r) => { for (let a = -r; a <= r; a += 12) for (let b = -r; b <= r; b += 12) { const c = rcell(x + a, z + b); if (!world.reach[c] || world.steepR[c] > lim) return false; } return true; };
-  const dry = (x, z) => world.sea == null || world.sample(x, z) > world.sea + 3;
+  const dry = (x, z) => world.sea == null || world.sample(x, z) > world.waterAt(x, z) + 3;
   // things to keep clear of: pickup spots and huts, garages, start lines, and every race course
   const spots = [...P.sites.flatMap((s) => [s, { x: s.hutX, z: s.hutZ }]), ...P.garages.flatMap((g) => [g, { x: g.bx, z: g.bz }]), ...Object.values(P.lines), P.trial];
   const courses = [];

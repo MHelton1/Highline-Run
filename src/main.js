@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { buildWorld, SURF, HALF, SIZE } from './terrain.js';
 import { Vehicle, G } from './vehicle.js';
 import { CARS, PAINTS, FIND_IDS, buildSpec, stockTune, PATROL_SPEC } from './cars.js';
-import { buildTerrain, buildRoads, buildTrees, buildProps, buildSea, buildSky, buildFall, GROUND_FX, SKIES, buildSites, buildGarages, buildLines, makeBeam, buildCrates, buildBarn, buildRamps, buildTraps } from './scene.js';
+import { buildTerrain, buildRoads, buildTrees, buildProps, buildSea, buildSky, buildFall, GROUND_FX, SKIES, buildSites, buildGarages, buildLines, makeBeam, buildCrates, buildBarn, buildRamps, buildTraps, buildRivers, buildBridges } from './scene.js';
 import { buildCar, setCarEnv, SHADE } from './carmodel.js';
 import { Game, CARGO, RIVAL_SPEC } from './jobs.js';
 import { buildRaces, Race, MEDALS, PLACES, KID_LEVEL, spotsFor, rankKey, medals } from './race.js';
@@ -69,7 +69,7 @@ function start(hot) {
   const seaNear = (() => {
     if (world.sea == null) return () => 0;
     const G = 96, C = SIZE / G, d = new Float32Array(G * G).fill(1e9), q = [];
-    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { if (world.sample(-HALF + (i + 0.5) * C, -HALF + (j + 0.5) * C) < world.sea) { d[j * G + i] = 0; q.push(j * G + i); } }
+    for (let j = 0; j < G; j++) for (let i = 0; i < G; i++) { const x = -HALF + (i + 0.5) * C, z = -HALF + (j + 0.5) * C; if (world.sample(x, z) < world.waterAt(x, z)) { d[j * G + i] = 0; q.push(j * G + i); } }
     for (let h = 0; h < q.length; h++) { const k = q[h], i = k % G, j = (k / G) | 0; for (const [a, b] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const x = i + a, z = j + b; if (x < 0 || z < 0 || x >= G || z >= G) continue; const m = z * G + x; if (d[m] > d[k] + C) { d[m] = d[k] + C; q.push(m); } } }
     return (x, z, y) => { const i = Math.max(0, Math.min(G - 1, ((x + HALF) / C) | 0)), j = Math.max(0, Math.min(G - 1, ((z + HALF) / C) | 0)); return Math.max(0, 1 - d[j * G + i] / 260) * Math.max(0.25, 1 - (y - world.sea) / 160); };
   })();
@@ -174,7 +174,7 @@ function start(hot) {
   if (S().tod !== 'day') setTime(S().tod);
   if (S().weather !== 'auto') { const f = fixedWeather(S().weather, world.region); if (f && f !== 'clear') { WX.now = WX.from = f; WX.cur = blendWeather(f, f, 1); applyAll(true); } }
   if (!(S().stats[world.region] || {}).v) { bump(S(), world.region, 'v'); store.commit(); }
-  buildTerrain(world, scene); buildSea(world, scene); buildRoads(world, scene); const treeMeshes = buildTrees(world, scene, shadows), smallMeshes = buildProps(world, scene, coarse ? 0.7 : 1);
+  buildTerrain(world, scene); buildSea(world, scene); buildRivers(world, scene); buildRoads(world, scene); buildBridges(world, scene); const treeMeshes = buildTrees(world, scene, shadows), smallMeshes = buildProps(world, scene, coarse ? 0.7 : 1);
   buildSites(game.sites, scene); buildGarages(garages, scene); buildLines(world, scene, races);
   // ---- hidden finds: crates to pick up, an old car in a shed, and ramps (laid into the ground after the terrain is drawn) ----
   addRamps(world, finds.ramps); buildRamps(world, finds.ramps, scene, RAMP);
@@ -323,11 +323,17 @@ function start(hot) {
   function paintBase(N, ls = 1, q = 1, v = { cx: 0, cz: 0, span: SIZE }) {   // ls: road width scale, q: symbol scale, v: the square shown
     const c = document.createElement('canvas'); c.width = c.height = N; const k = N / v.span, fx = (x) => (v.cx + v.span / 2 - x) * k, fy = (z) => (v.cz + v.span / 2 - z) * k;
     const g = c.getContext('2d'); g.lineCap = g.lineJoin = 'round';
+    for (const rv of world.rivers || []) {   // rivers, under the roads, a little wider than they really are so they show
+      g.strokeStyle = 'rgba(40,120,165,0.6)';
+      g.lineWidth = Math.max(2 * ls, 2 * (rv.hw.reduce((a, b) => a + b, 0) / rv.n + 4) * k); g.setLineDash([]); g.beginPath();
+      for (let i = 0; i < rv.n; i += 4) i ? g.lineTo(fx(rv.x[i]), fy(rv.z[i])) : g.moveTo(fx(rv.x[i]), fy(rv.z[i]));
+      g.stroke();
+    }
     for (const road of world.roads.slice().reverse()) { g.beginPath(); for (let i = road.from; i <= road.to; i += 4) { const x = fx(road.x[i]), y = fy(road.z[i]); i === road.from ? g.moveTo(x, y) : g.lineTo(x, y); } if (road.closed) g.closePath(); g.strokeStyle = road.surf === SURF.ASPHALT ? '#f3efe4' : '#c79a5b'; g.lineWidth = (road.surf === SURF.ASPHALT ? 5 : 3) * ls; if (road.surf !== SURF.ASPHALT) g.setLineDash([7 * ls, 6 * ls]); else g.setLineDash([]); g.stroke(); }
     if (world.sea != null) {         // the sea, tinted blue (sampled once at corner map size, stretched for the big map)
       if (!seaImg) {
         const img = g.createImageData(MM, MM), d = img.data;
-        for (let py = 0; py < MM; py++) for (let px = 0; px < MM; px++) if (world.sample(HALF - px / K, HALF - py / K) < world.sea) { const o = (py * MM + px) * 4; d[o] = 40; d[o + 1] = 120; d[o + 2] = 165; d[o + 3] = 120; }
+        for (let py = 0; py < MM; py++) for (let px = 0; px < MM; px++) if (world.sample(HALF - px / K, HALF - py / K) < world.waterAt(HALF - px / K, HALF - py / K)) { const o = (py * MM + px) * 4; d[o] = 40; d[o + 1] = 120; d[o + 2] = 165; d[o + 3] = 120; }
         seaImg = document.createElement('canvas'); seaImg.width = seaImg.height = MM; seaImg.getContext('2d').putImageData(img, 0, 0);
       }
       g.globalCompositeOperation = 'destination-over'; g.drawImage(seaImg, (HALF - v.cx - v.span / 2) * K, (HALF - v.cz - v.span / 2) * K, v.span * K, v.span * K, 0, 0, N, N); g.globalCompositeOperation = 'source-over';
@@ -499,7 +505,7 @@ function start(hot) {
     duel.update(dt); duelEvents();
     [car, car2].forEach((c, i) => {
       if (c.up.y < 0.35 && c.speed < 2) { duoUp[i] += dt; if (duoUp[i] > 1.5) { duoUp[i] = 0; c.place(c.pos.x, c.pos.z, Math.atan2(c.fwd.x, c.fwd.z), 1.0); } } else duoUp[i] = 0;
-      if (world.sea != null && c.pos.y < world.sea - 0.6) { duel.resetPlayer(i); audio.splash(); }
+      if (world.sea != null && c.pos.y < world.waterAt(c.pos.x, c.pos.z) - 0.6) { duel.resetPlayer(i); audio.splash(); }
     });
     if (duoDoneT > 0 && (duoDoneT -= dt) <= 0) { mode = 'duelres'; ui.duelResults(duel.result, duelSet); setMenu(); }
   }
@@ -954,7 +960,7 @@ function start(hot) {
       if (mode === 'race' && race.state === 'run' && race.track) { offT = race.track.far > 45 ? offT + dt : 0; if (offT > 1.5) { toast(coarse && !input.pad ? 'Off the course. Tap ROAD to go back' : `Off the course. Press ${said('reset')} to go back`, 1.2); offT = 0; } }
     }
     if (driving() && mode !== 'duel') {
-      if (world.sea != null && car.pos.y < world.sea - 0.6) {   // into the sea: a splash, then back on the road (or the course)
+      if (world.sea != null && car.pos.y < world.waterAt(car.pos.x, car.pos.z) - 0.6) {   // into the sea or a river: a splash, then back on the road (or the course)
         seaT += dt; if (seaT > 0.8) { seaT = 0; input.fire('reset'); audio.splash(); toast('Splash! Keep out of the water', 2.2); if (mode === 'roam' && game.job) game.damage(30); }
       } else seaT = 0;
       if (S().kid) {                  // kid mode puts the car back on its wheels, and back on the road when it is stuck

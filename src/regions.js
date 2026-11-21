@@ -35,6 +35,9 @@ REGIONS.coast = {
   trailSites: ['Shepherd Hut', 'Ridge Beacon'],
   camps: ['Wreck Beach', 'Sea Cave', 'Bracken Hollow', 'Signal Hill'],
   trialVia: 'Gull Point', trialGates: [[-350, 280], [60, 280], [110, 600]],
+  // rivers, each from its mouth out in the sea up into the hills (x, z in metres); the roads cross them on bridges
+  rivers: [{ name: 'Gullwater', pts: [[-800, -1120], [-648, -876], [-556, -624], [-488, -376], [-400, -250]] },
+    { name: 'Saltburn', pts: [[1380, -340], [1064, -336], [824, -356], [584, -416], [384, -488]] }],
   snow: false, trees: 'fir', treeCount: [4000, 5500],
   surfName: ['Asphalt', 'Dirt', 'Grass', 'Rock', 'Snow'],
 };

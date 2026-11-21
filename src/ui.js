@@ -232,13 +232,13 @@ export function createUI(g) {
     const racing = g.racing(), opt = g.options();
     armed = false;
     card('pause', [
-      el('span', { class: 'lbl' }, racing ? 'Race paused' : 'Paused'), el('h2', { id: 'dlg-title' }, 'Menu'),
+      el('span', { class: 'lbl' }, racing && !g.duoFree() ? 'Race paused' : 'Paused'), el('h2', { id: 'dlg-title' }, 'Menu'),
       el('p', { class: 'note', id: 'dlg-save' }, g.store.status()),
       (() => { const d = g.dailyInfo(); return el('div', { class: 'daily' + (d.done ? ' done' : ''), id: 'dlg-daily' }, el('span', { class: 'lbl' }, d.done ? 'Daily challenge · done' : `Daily challenge · ${money(d.pay)}`), el('span', { class: 'dtext' }, d.text), el('span', { class: 'dprog' }, d.done ? (d.streak > 1 ? `Done. ${d.streak} days in a row. A new one tomorrow` : 'Done. A new one tomorrow') : d.progress + (d.streak > 0 ? ` · streak ${d.streak}` : ''))); })(),
       el('div', { class: 'actions' },
         el('button', { id: 'dlg-go', type: 'button', class: 'btn primary', onclick: () => g.resume() }, 'Back to driving'),
-        racing && el('button', { id: 'dlg-restart', type: 'button', class: 'btn', onclick: () => g.restartRace() }, 'Restart race'),
-        racing && el('button', { id: 'dlg-quit', type: 'button', class: 'btn', onclick: () => g.quitRace() }, 'Leave race'),
+        racing && !g.duoFree() && el('button', { id: 'dlg-restart', type: 'button', class: 'btn', onclick: () => g.restartRace() }, 'Restart race'),
+        racing && el('button', { id: 'dlg-quit', type: 'button', class: 'btn', onclick: () => g.quitRace() }, g.duoFree() ? 'Back to one player' : 'Leave race'),
         el('button', { id: 'dlg-map', type: 'button', class: 'btn', onclick: () => g.map() }, 'Map'),
         !racing && el('button', { id: 'dlg-duo', type: 'button', class: 'btn', onclick: () => duelSetup() }, 'Two players'),
         el('button', { id: 'dlg-controls', type: 'button', class: 'btn', onclick: () => controls() }, 'Controls'),
@@ -255,6 +255,8 @@ export function createUI(g) {
         el('button', { id: 'dlg-time', type: 'button', class: 'btn', onclick: () => { g.nextTime(); pause(); focusOn($('dlg-time')); } }, 'Time: ' + opt.tod),
         el('button', { id: 'dlg-fps', type: 'button', class: 'btn', onclick: () => { g.toggleFps(); pause(); focusOn($('dlg-fps')); } }, 'Frame rate ' + (opt.fps ? 'shown' : 'hidden')),
         el('button', { id: 'dlg-cash', type: 'button', class: 'btn', onclick: () => { g.testCash(); pause(); focusOn($('dlg-cash')); } }, 'Add $10,000 test cash'),
+        g.fullInfo().can && el('button', { id: 'dlg-full', type: 'button', class: 'btn', 'aria-pressed': String(g.fullInfo().on), onclick: () => { g.toggleFull(); focusOn($('dlg-full')); } }, 'Full screen ' + (g.fullInfo().on ? 'on' : 'off')),
+        g.fullInfo().desk && el('button', { id: 'dlg-exit', type: 'button', class: 'btn', onclick: () => g.quit() }, 'Exit game'),
         el('button', { id: 'dlg-wipe', type: 'button', class: 'btn danger', onclick: () => { if (!armed) { armed = true; $('dlg-wipe').textContent = 'Press again to erase everything'; } else g.resetProgress(); } }, 'Erase saved progress')),
       el('p', { class: 'note' }, `Cash ${money(S().cash)}. The test cash button is here so the garage can be tried without grinding; it will go before release.`),
       el('dl', { class: 'keys' },
@@ -340,14 +342,14 @@ export function createUI(g) {
       el('p', { class: 'note' }, info.touch && !info.pads ? 'Two players need a keyboard or game controllers (a computer, a TV browser, or a tablet with controllers).' : (() => { const b = g.binds(), K = (set, id) => (b[set][id] || []).map(keyName)[0] || '?', four = (set) => ['gas', 'left', 'brake', 'right'].map((id) => K(set, id)).join(' ');
         return `Player 1: ${four('keys')}, ${K('keys', 'hand')} to slide. Player 2: ${four('p2')}, ${K('p2', 'hand')} to slide. With controllers: two, one each; one, it goes to player 2. Change keys in the menu, Controls.`; })()),
       seg('Event', info.events.map((e) => ({ id: 'dlg-duo-' + e.id, text: e.short || e.name, on: e.id === duoPick.ev, pick: () => duelSetup({ ev: e.id }) }))),
-      el('p', { class: 'note' }, ev.name + (ev.laps > 1 ? ` · ${ev.laps} laps` : '')),
+      el('p', { class: 'note' }, ev.free ? 'Open map: drive anywhere together, side by side from the nearest road. No race and no clock; an arrow points to the other car. Leave from the menu.' : ev.name + (ev.laps > 1 ? ` · ${ev.laps} laps` : '')),
       el('div', { class: 'pick' }, el('span', { class: 'lbl' }, 'Player 2 drives'), el('div', { class: 'seg' },
         el('button', { id: 'dlg-duo-prev', type: 'button', 'aria-label': 'Previous car', onclick: () => { g.audio.click(); duelSetup({ car: info.cars[(ci - 1 + info.cars.length) % info.cars.length] }); focusOn($('dlg-duo-prev')); } }, '◀'),
         el('button', { id: 'dlg-duo-car', type: 'button', 'aria-pressed': 'true' }, CARS[duoPick.car].base.name),
         el('button', { id: 'dlg-duo-next', type: 'button', 'aria-label': 'Next car', onclick: () => { g.audio.click(); duelSetup({ car: info.cars[(ci + 1) % info.cars.length] }); focusOn($('dlg-duo-next')); } }, '▶'))),
       el('p', { class: 'note' }, `Player 1 drives the ${CARS[info.p1].base.name}. No prize money; just bragging rights.`),
       el('div', { class: 'actions' },
-        el('button', { id: 'dlg-duo-go', type: 'button', class: 'btn primary', onclick: () => g.startDuel(duoPick.ev, duoPick.car) }, 'Start the race'),
+        el('button', { id: 'dlg-duo-go', type: 'button', class: 'btn primary', onclick: () => g.startDuel(duoPick.ev, duoPick.car) }, ev.free ? 'Start driving' : 'Start the race'),
         el('button', { id: 'dlg-duo-back', type: 'button', class: 'btn', onclick: () => g.duelBack() }, 'Back')),
     ], () => g.duelBack());
   }

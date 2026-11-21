@@ -299,9 +299,12 @@ function start(hot) {
   }
   function trail(c, dt, rate) {    // dust, mud, spray, snow and tyre smoke behind one car
     const wet = wetNow(), snow = snowNow();
-    c.dustAcc = (c.dustAcc || 0) + dt * Math.min(1, c.speed / 12) * rate * (wet > 0.3 || snow > 0.3 ? 1.4 : 1);
+    c.dustAcc = (c.dustAcc || 0) + dt * Math.min(1, c.speed / 12) * rate * (wet > 0.3 || snow > 0.3 ? 1.4 : 1) * (1 + 0.5 * Math.min(1, (c.spec.driveFront || 0) / 0.35));
     while (c.dustAcc > 1) {
-      c.dustAcc -= 1; const w = c.wheels[2 + (Math.random() * 2 | 0)]; if (!w.onGround) continue; const loose = w.surf !== SURF.ASPHALT;
+      c.dustAcc -= 1;
+      // four-wheel-drive cars throw as much off the front tyres as off the back
+      const front = (c.spec.driveFront || 0) > 0.05 && Math.random() < 0.5 * Math.min(1, c.spec.driveFront / 0.35);
+      const w = c.wheels[(front ? 0 : 2) + (Math.random() * 2 | 0)]; if (!w.onGround) continue; const loose = w.surf !== SURF.ASPHALT;
       if (snow > 0.3 && Math.random() < snow) { if (c.speed > 4 || w.slip > 0.4) spray(w.hit, c, SNOW_COL[w.surf], loose ? 1 : 0.8, loose ? 0.6 : 0.4); continue; }
       if (wet > 0.3 && Math.random() < wet) {
         if (loose && w.surf !== SURF.SNOW) { if (c.speed > 3 || w.slip > 0.4) { mud(w.hit, c, w.surf); if (Math.random() < 0.5) spray(w.hit, c, MUD_COL[w.surf], 0.9, 0.35); } }
@@ -456,6 +459,8 @@ function start(hot) {
   const duoUp = [0, 0], cam2 = new THREE.PerspectiveCamera(62, 1, camera.near, camera.far), cam2Dir = new THREE.Vector3(0, 0, 1);
   const duoEl = $('duo'), duoP = [0, 1].map((i) => ({ box: $('duo-p' + i), speed: $('duo-s' + i), lbl: $('duo-l' + i), place: $('duo-n' + i), arrow: $('duo-a' + i), time: $('duo-t' + i) }));
   const wideSplit = () => canvas.clientWidth >= canvas.clientHeight;
+  // the open map for two: side by side on the nearest road to where player 1 is now
+  function openMap2() { const r = world.nearestRoad(car.pos.x, car.pos.z); return { id: 'free', name: 'Open map', free: true, start: { x: r.x, z: r.z, yaw: r.yaw } }; }
   function startDuel(def, p2id) {
     if (game.job) { toast('Deliver or lose the cargo first', 2.4); return; }
     ui.close(); clearRace(); dropDuel();
@@ -485,7 +490,8 @@ function start(hot) {
     }
   }
   function duelStep(two) {        // one physics step for both cars
-    car.step(STEP, duel.input(0, two[0])); car2.step(STEP, duel.input(1, two[1])); duel.step(STEP);
+    const kid = S().kid, a = kid ? kidInput(car, two[0], kidOut) : two[0], b = kid ? kidInput(car2, two[1], kidOut2) : two[1];   // kid mode drives both cars' pedals
+    car.step(STEP, duel.input(0, a)); car2.step(STEP, duel.input(1, b)); duel.step(STEP);
     skids.car(car, 'p', two[0].handbrake); skids.car(car2, 'q', two[1].handbrake);
     for (let i = 0; i < 2; i++) if (duel.bump[i] > 3) { hit(duel.bump[i] + 4); duel.bump[i] = 0; }
   }
@@ -527,6 +533,13 @@ function start(hot) {
     [car, car2].forEach((c, i) => {
       const P = duoP[i], q = duel.players[i], g = duel.next(i);
       P.speed.textContent = Math.round(c.speed * (m ? 3.6 : 2.23694)) + (m ? ' km/h' : ' mph');
+      if (duel.free) {             // open map: how far apart the two are, and an arrow to the other car
+        const o = i ? car : car2, dx = o.pos.x - c.pos.x, dz = o.pos.z - c.pos.z, d = Math.hypot(dx, dz);
+        P.lbl.textContent = 'Open map · arrow to ' + P_NAMES[1 - i]; P.time.textContent = clock(duel.clock);
+        P.place.textContent = m ? (d < 1000 ? Math.round(d) + ' m' : (d / 1000).toFixed(1) + ' km') : (d < 161 ? Math.round(d * 3.28084) + ' ft' : (d / 1609.34).toFixed(1) + ' mi');
+        P.arrow.style.visibility = 'visible'; P.arrow.style.transform = `rotate(${(-Math.atan2(dx * c.fwd.z - dz * c.fwd.x, dx * c.fwd.x + dz * c.fwd.z)).toFixed(2)}rad)`;
+        return;
+      }
       P.lbl.textContent = duel.state === 'count' ? 'Get ready' : q.time != null ? 'Finished' : `Checkpoint ${q.gate + 1} of ${duel.gates.length}` + (duel.laps > 1 ? ` · lap ${q.lap + 1} of ${duel.laps}` : '');
       P.place.textContent = PLACES[pl[i] - 1]; P.time.textContent = clock(q.time != null ? q.time : duel.clock);
       P.arrow.style.visibility = g ? 'visible' : 'hidden';
@@ -736,8 +749,9 @@ function start(hot) {
     pickCup: () => { if (mode === 'offer') { lastRace.ring = 'cup'; ui.cupOffer(groupOf(races.find((d) => d.base === CUP_ROUNDS[0]))); } }, cupInfo, startCup, dropCup: () => { S().cup = null; store.commit(); },
     nextCupRound: () => { const c = myCup(); if (c) startRace(cupRound(races, world.region, c.round), c.lv); else endRace(); },
     racing: () => mode === 'race' || mode === 'duel', resume, restartRace: () => (duel ? startDuel(duelSet.def, duelSet.p2) : startRace(race.def)), quitRace: () => (duel ? endDuel() : endRace()),
-    duelInfo: () => ({ events: races.map((d) => ({ id: d.id, name: d.name, short: d.short || d.name, laps: d.laps || 1 })), cars: Object.keys(S().cars), p1: S().car, touch: coarse, pads: input.pads || 0 }),
-    startDuel: (evId, carId) => startDuel(races.find((d) => d.id === evId), carId), endDuel,
+    duelInfo: () => ({ events: [{ id: 'free', name: 'Open map', short: 'Open map', free: true }, ...races.map((d) => ({ id: d.id, name: d.name, short: d.short || d.name, laps: d.laps || 1 }))], cars: Object.keys(S().cars), p1: S().car, touch: coarse, pads: input.pads || 0 }),
+    fullInfo: () => ({ can: full.can, on: full.on, desk: !!desk }), toggleFull: () => full.toggle(), quit: () => { if (desk) { store.commit(); desk.quit(); } },
+    startDuel: (evId, carId) => startDuel(evId === 'free' ? openMap2() : races.find((d) => d.id === evId), carId), duoFree: () => !!(duel && duel.free), endDuel,
     binds: () => input.binds, capture: (kind, done) => input.capture(kind, done), cancelCapture: () => input.cancelCapture(), padInfo: () => ({ name: input.padName(), kind: input.padKind() }),
     setBind: (set, id, slot, v) => { const from = setBind(input.binds, set, id, slot, v); saveBinds(); return from; }, resetBinds: (set) => { resetSet(input.binds, set); saveBinds(); },
     setPadStyle: (st) => { if (STYLES.includes(st)) { input.binds.style = st; saveBinds(); } }, keyLabel: kl, padLabel: pl, duelBack: () => (mode === 'duelres' ? endDuel() : resume()),
@@ -755,15 +769,27 @@ function start(hot) {
   promptEl.addEventListener('click', () => { useZone(); if (driving()) canvas.focus(); });
   $('menubtn').addEventListener('click', () => { pause(); });
   $('duo-menu').addEventListener('click', () => { if (mode === 'duel') pause(); });
-  // full screen, where the browser allows it from inside the viewer's frame (not on iPhone, which has no full screen for pages)
+  // full screen: in the Windows app through the app itself (window.desktop, see offline/app/preload.js), in a browser
+  // where it allows it from inside the viewer's frame (not on iPhone, which has no full screen for pages)
+  const desk = typeof window !== 'undefined' && window.desktop && typeof window.desktop.fullscreen === 'function' ? window.desktop : null;
+  const full = { can: false, on: false, toggle: () => {} };
   { const de = document.documentElement, req = de.requestFullscreen || de.webkitRequestFullscreen, fb = $('fullbtn');
-    const on = () => document.fullscreenElement || document.webkitFullscreenElement;
-    if (req && (document.fullscreenEnabled || document.webkitFullscreenEnabled)) {
-      fb.hidden = false;
-      fb.addEventListener('click', () => { try { if (on()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else { const r = req.call(de); if (r && r.catch) r.catch(() => { fb.hidden = true; }); } } catch (_) { fb.hidden = true; } canvas.focus(); });
-      const mark = () => { fb.textContent = on() ? '✕' : '⛶'; fb.setAttribute('aria-label', on() ? 'Leave full screen' : 'Full screen'); };
-      document.addEventListener('fullscreenchange', mark); document.addEventListener('webkitfullscreenchange', mark);
-    } }
+    const mark = () => { fb.textContent = full.on ? '✕' : '⛶'; fb.setAttribute('aria-label', full.on ? 'Leave full screen' : 'Full screen'); };
+    if (desk) {
+      full.can = true; fb.hidden = false;
+      full.toggle = () => Promise.resolve(desk.fullscreen()).then((v) => { full.on = !!v; mark(); if (paused) ui.pause(); }).catch(() => {});
+      Promise.resolve(desk.isFullscreen()).then((v) => { full.on = !!v; mark(); }).catch(() => {});
+      addEventListener('resize', () => Promise.resolve(desk.isFullscreen()).then((v) => { if (full.on !== !!v) { full.on = !!v; mark(); } }).catch(() => {}));
+    } else if (req && (document.fullscreenEnabled || document.webkitFullscreenEnabled)) {
+      const on = () => !!(document.fullscreenElement || document.webkitFullscreenElement);
+      full.can = true; fb.hidden = false;
+      full.toggle = () => { try { if (on()) (document.exitFullscreen || document.webkitExitFullscreen).call(document); else { const r = req.call(de); if (r && r.catch) r.catch(() => { fb.hidden = true; full.can = false; }); } } catch (_) { fb.hidden = true; full.can = false; } };
+      const sync = () => { full.on = on(); mark(); if (paused && ui.kind === 'pause') ui.pause(); };
+      document.addEventListener('fullscreenchange', sync); document.addEventListener('webkitfullscreenchange', sync);
+    }
+    fb.addEventListener('click', () => { full.toggle(); canvas.focus(); });
+    if (desk) { const q = $('quitbtn'); if (q) { q.hidden = false; q.addEventListener('click', () => desk.quit()); } }
+  }
   input.on('action', useZone);
   input.on('reset', () => {
     if (!driving()) return;
@@ -879,8 +905,32 @@ function start(hot) {
     dwell = slow && armed ? dwell + dt : 0;
     if (dwell > 0.7) enter(z);           // armed: the car drove in from outside, so stopping is enough
   }
-  const kidOut = {};
+  const kidOut = {}, kidOut2 = {};
+  // Physics runs at 120 steps a second, the screen at whatever rate it has, so a frame often falls between two steps.
+  // Each car is drawn where it was part way from its last step to the next (that share of a step is acc / STEP), so
+  // the picture moves evenly instead of stuttering when a frame gets one step more or less. The true position is put
+  // back before any physics runs (and kept if something moved the car meanwhile, such as a reset).
+  const shownAt = new Map();          // vehicle -> { pos, quat }: its true pose while the drawn one is in place
+  const movers = () => { const l = [car]; if (car2) l.push(car2); if (race) for (const r of race.rivals) l.push(r.car); for (const pt of game.patrols) l.push(pt.car); if (game.rival) l.push(game.rival.car); return l; };
+  function drawBetween(alpha) {
+    for (const v of movers()) {
+      if (!v.prevPos || v.prevPos.distanceToSquared(v.pos) > 25) continue;      // a jump (reset): no blending
+      let k = shownAt.get(v); if (!k) { k = { pos: new THREE.Vector3(), quat: new THREE.Quaternion(), dpos: new THREE.Vector3(), dquat: new THREE.Quaternion(), on: false }; shownAt.set(v, k); }
+      k.pos.copy(v.pos); k.quat.copy(v.quat);
+      v.pos.lerpVectors(v.prevPos, k.pos, alpha); v.quat.slerpQuaternions(v.prevQuat, k.quat, alpha);
+      k.dpos.copy(v.pos); k.dquat.copy(v.quat); k.on = true;
+    }
+  }
+  function trueAgain() {
+    for (const [v, k] of shownAt) {
+      if (!k.on) continue; k.on = false;
+      if (v.pos.equals(k.dpos) && v.quat.equals(k.dquat)) { v.pos.copy(k.pos); v.quat.copy(k.quat); }
+    }
+    if (shownAt.size > 24) for (const v of [...shownAt.keys()]) if (!movers().includes(v)) shownAt.delete(v);
+  }
+
   function simulate(dt, inp) {
+    trueAgain();
     if (paused || mode === 'title' || mode === 'offer') return;
     if (S().kid && (mode === 'roam' || mode === 'race')) inp = kidInput(car, inp, kidOut);
     acc += dt; thumpT -= dt; if (mode !== 'roam') nitro.on = false;
@@ -971,6 +1021,7 @@ function start(hot) {
     const inp = input.poll(now);
     if (pendingRemote && (mode === 'title' || (mode === 'roam' && !game.job && !paused))) applyRemote();
     simulate(dt, inp);
+    if (!paused) drawBetween(Math.min(1, acc / STEP));
     const live = driving(), racing = mode === 'race' || mode === 'results';
 
     // cars
@@ -1092,11 +1143,14 @@ function start(hot) {
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
-  window.__game = { startDuel, endDuel, get duel() { return duel; }, get car2() { return car2; }, duoHud, get dustKinds() { const k = {}; for (const d of dust) if (d.visible) k[d.userData.kind] = (k[d.userData.kind] || 0) + 1; return k; }, daily, dailyInfo, skids, get flames() { return flames.map((f) => f.visible); }, tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
+  window.__game = { trail, showCar, trueAgain, get shownAt() { return shownAt; }, startDuel, endDuel, get duel() { return duel; }, get car2() { return car2; }, duoHud, get dustKinds() { const k = {}; for (const d of dust) if (d.visible) k[d.userData.kind] = (k[d.userData.kind] || 0) + 1; return k; }, daily, dailyInfo, skids, get flames() { return flames.map((f) => f.visible); }, tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },
     get drawn() { const r = renderer.info.render; return { quality, locked, shadows: sun.castShadow, triangles: r.triangles, calls: r.calls, small: smallMeshes.reduce((n, m) => n + m.count, 0), smallShown: smallMeshes.reduce((n, m) => n + (m.visible ? m.count : 0), 0) }; },
     get ghost() { return ghost && { time: ghost.time, n: ghost.n, splits: ghost.splits.length, shown: !!ghostVis && ghostVis.car.visible, pos: ghostVis ? ghostVis.car.position.toArray().map(Math.round) : null }; },
     get race() { return race; }, get mode() { return mode; }, get paused() { return paused; }, get quality() { return quality; }, get vis() { return vis; } };
+  // get every shader ready now (flames, beams, mud, rain and the rest start hidden), so nothing stalls a frame the first
+  // time it appears while driving
+  { const hid = []; scene.traverse((o) => { if (!o.visible) { hid.push(o); o.visible = true; } }); try { renderer.compile(scene, camera); } catch (_) {} for (const o of hid) o.visible = false; }
   $('loading').hidden = true; $('go').hidden = false;
   store.connect();
   requestAnimationFrame(frame);

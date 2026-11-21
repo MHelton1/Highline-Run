@@ -33,4 +33,10 @@ for (const def of races) {
 { const def = races.find((r) => r.kind === 'sprint') || races[0], a = mk('hatch'), b = mk('hatch'), d = new Duel(world, def, [a, b]); d.state = 'run';
   const g0 = def.gates[0]; a.place(g0.x, g0.z, 0); d.step(1 / 60); a.place(0, 0, 0); d.resetPlayer(0);
   assert.ok(Math.hypot(a.pos.x - g0.x, a.pos.z - g0.z) < 3); d.resetPlayer(1); assert.ok(Number.isFinite(b.pos.x)); }
+// the open map: side by side at the start given, racing at once, no checkpoints, never finishes, reset to the road
+{ const r = world.nearestRoad(0, 0), def = { id: 'free', free: true, start: { x: r.x, z: r.z, yaw: r.yaw } }, a = mk('hatch'), b = mk('truck'), d = new Duel(world, def, [a, b]);
+  assert.equal(d.state, 'run'); assert.equal(d.next(0), null); assert.ok(a.pos.distanceTo(b.pos) > 3 && a.pos.distanceTo(b.pos) < 8);
+  assert.deepEqual(d.input(0, { steer: 0, throttle: 1, brake: 0, handbrake: false, analog: true }).throttle, 1);
+  for (let t = 0; t < 120; t++) d.step(1); assert.equal(d.state, 'run'); assert.equal(d.events.length, 0);
+  a.place(r.x + 200, r.z + 200, 0); d.resetPlayer(0); const n = world.nearestRoad(a.pos.x, a.pos.z); assert.ok(Math.hypot(a.pos.x - n.x, a.pos.z - n.z) < 1); }
 console.log(region, 'duel: all checks passed for', races.length, 'events');

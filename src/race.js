@@ -35,7 +35,7 @@ const REGION_EVENTS = {
     double: { id: 'coastx', name: 'Coast Road Double' },
     dash: { id: 'ridge', name: 'Ridge Run', short: 'Ridge Run', blurb: 'Point to point over the green ridge on the dirt trail. Three rivals, no second lap to make up for mistakes.' },
     descent: { id: 'ridgeb', name: 'Ridge Return', short: 'Ridge Return', blurb: 'The ridge trail back from the far side, every corner the other way.' },
-    scramble: { id: 'cliffs', name: 'Clifftop Scramble', short: 'Scramble', medals: [150, 185, 240], blurb: 'No road and no rivals. Cross the headland through every checkpoint in order and beat the clock. Stay out of the sea.' },
+    scramble: { id: 'cliffs', name: 'Clifftop Scramble', short: 'Scramble', medals: [140, 185, 240], blurb: 'No road and no rivals. Cross the headland through every checkpoint in order and beat the clock. Stay out of the sea.' },
   },
   desert: {
     spots: { ring: 'Basin Loop races', west: 'Canyon Run', east: 'Canyon Return', trial: 'Dune Scramble' },
@@ -44,7 +44,7 @@ const REGION_EVENTS = {
     double: { id: 'loopx', name: 'Basin Loop Double' },
     dash: { id: 'canyon', name: 'Canyon Run', short: 'Canyon Run', blurb: 'Point to point on the dirt trail through the canyon between the mesas. Three rivals, no second lap to make up for mistakes.' },
     descent: { id: 'canyonb', name: 'Canyon Return', short: 'Canyon Return', blurb: 'The canyon trail back from the far side. Same walls, every corner the other way.' },
-    scramble: { id: 'flats', name: 'Dune Scramble', short: 'Scramble', medals: [145, 180, 235], blurb: 'No road and no rivals. Cross the open desert through every checkpoint in order, pick your own line over the dunes, and beat the clock.' },
+    scramble: { id: 'flats', name: 'Dune Scramble', short: 'Scramble', medals: [135, 180, 235], blurb: 'No road and no rivals. Cross the open desert through every checkpoint in order, pick your own line over the dunes, and beat the clock.' },
   },
 };
 // the six events of a region by id, name and kind, without building the world (for the goals list)
@@ -94,7 +94,7 @@ function mountainRaces(world) {
     { id: 'scramble', spot: 'trial', name: 'Backcountry Scramble', short: 'Scramble', kind: 'trial', tag: 'Time trial · off-road', blurb: 'No road and no rivals. Hit every checkpoint in order, pick your own line between them, and beat the clock.',
       x: T.x, z: T.z, y: T.y, start: { x: T.x, z: T.z, yaw: T.yaw }, gates: T.gates.map((g) => ({ x: g.x, z: g.z, y: g.y, r: 14 })),
       dist: T.gates.reduce((a, g, i) => a + Math.hypot(g.x - (i ? T.gates[i - 1].x : T.x), g.z - (i ? T.gates[i - 1].z : T.z)), 0),
-      rivals: [], medals: [130, 160, 210], prize: [2000, 1000, 500] },
+      rivals: [], medals: [121, 160, 210], prize: [2000, 1000, 500] },
   ];
 }
 

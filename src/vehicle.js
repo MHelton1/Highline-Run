@@ -22,7 +22,7 @@ const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 export class Vehicle {
   constructor(world, spec = RALLY_CAR) {
     this.world = world;
-    this.pos = new Vector3(); this.quat = new Quaternion(); this.vel = new Vector3(); this.angVel = new Vector3();
+    this.pos = new Vector3(); this.quat = new Quaternion(); this.prevPos = new Vector3(); this.prevQuat = new Quaternion(); /* where it was before the last step, for drawing between steps */ this.vel = new Vector3(); this.angVel = new Vector3();
     this.up = new Vector3(0, 1, 0); this.fwd = new Vector3(0, 0, 1); this.left = new Vector3(1, 0, 0);
     this.F = new Vector3(); this.T = new Vector3();
     this.wheels = [true, true, false, false].map((front) => ({ local: new Vector3(), front, comp: 0, prevComp: 0, onGround: false, spin: 0, slip: 0, surf: 0, load: 0,
@@ -57,12 +57,14 @@ export class Vehicle {
     this.pos.y += need;
     this.vel.set(0, 0, 0); this.angVel.set(0, 0, 0); this.gear = 1; this.steer = 0; this.steerIn = 0; this.hold = 0; this.stopT = 0;
     for (const w of this.wheels) { w.comp = w.prevComp = 0; }
+    this.prevPos.copy(this.pos); this.prevQuat.copy(this.quat);
   }
 
   addForce(f, at) { this.F.add(f); rel.subVectors(at, this.pos); this.T.add(cr.crossVectors(rel, f)); }
   pointVel(at, out) { rel.subVectors(at, this.pos); return out.crossVectors(this.angVel, rel).add(this.vel); }
 
   step(dt, input) {
+    this.prevPos.copy(this.pos); this.prevQuat.copy(this.quat);
     const s = this.spec, world = this.world, q = this.q, m = s.mass;
     this.up.set(0, 1, 0).applyQuaternion(this.quat); this.fwd.set(0, 0, 1).applyQuaternion(this.quat); this.left.set(1, 0, 0).applyQuaternion(this.quat);
     const up = this.up, fwd = this.fwd;

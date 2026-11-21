@@ -16,7 +16,8 @@ const mode = process.argv[2] || 'desk', OUT = process.argv[3] || path.join(__dir
   await p.click('#menubtn'); await p.waitForTimeout(300);
   await p.click('#dlg-duo'); await p.waitForTimeout(300);
   const setup = await p.evaluate(() => ({ title: document.getElementById('dlg-title').textContent, evs: [...document.querySelectorAll('[id^="dlg-duo-"]')].map((e) => e.id), car: document.getElementById('dlg-duo-car').textContent }));
-  check('setup', setup.title === 'Two players' && setup.evs.includes('dlg-duo-go') && setup.evs.length >= 10, setup);
+  check('setup', setup.title === 'Two players' && setup.evs.includes('dlg-duo-go') && setup.evs.includes('dlg-duo-free') && setup.evs.length >= 11, setup);
+  await p.click('#dlg-duo-' + (await p.evaluate(() => window.__game.races[0].id))); await p.waitForTimeout(200);
   await p.click('#dlg-duo-go'); await p.waitForTimeout(300);
   // both players held still: the test drives the cars by moving them
   await p.evaluate(() => { const g = window.__game, z = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }; g.input.poll2 = () => [z, z]; });
@@ -51,6 +52,23 @@ const mode = process.argv[2] || 'desk', OUT = process.argv[3] || path.join(__dir
   const back = await p.evaluate(() => ({ mode: window.__game.mode, duo: document.body.classList.contains('duo'), car2: window.__game.car2, dash: getComputedStyle(document.getElementById('dash')).visibility }));
   check('back', back.mode === 'roam' && !back.duo && back.car2 == null && back.dash === 'visible', back);
   await p.evaluate(() => window.__game.advance(0.5));
+  // the open map for two, with kid mode on: no checkpoints or clock to beat, the arrow points at the other car, and kid
+  // mode drives both cars' pedals
+  await p.evaluate(() => { window.__game.store.data.kid = true; });
+  await p.click('#menubtn'); await p.waitForTimeout(300); await p.click('#dlg-duo'); await p.waitForTimeout(300);
+  await p.click('#dlg-duo-free'); await p.waitForTimeout(200);
+  const fsetup = { on: await p.evaluate(() => document.getElementById('dlg-duo-free').getAttribute('aria-pressed')), go: await p.evaluate(() => document.getElementById('dlg-duo-go').textContent) };
+  await p.click('#dlg-duo-go'); await p.waitForTimeout(300);
+  await p.evaluate(() => { const g = window.__game, z = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }; g.input.poll2 = () => [z, z]; });
+  const free = await p.evaluate(() => { const g = window.__game, d = g.duel; g.advance(2.5); g.duoHud(); return { free: d.free, state: d.state, gates: d.next(0), v1: +g.car.speed.toFixed(1), v2: +g.car2.speed.toFixed(1),
+    lbl: document.getElementById('duo-l0').textContent, dist: document.getElementById('duo-n0').textContent, gap: +g.car.pos.distanceTo(g.car2.pos).toFixed(1) }; });
+  check('open map', fsetup.on === 'true' && fsetup.go === 'Start driving' && free.free && free.state === 'run' && free.gates === null && /Open map/.test(free.lbl) && /\d+ (ft|m)$/.test(free.dist), { fsetup, free });
+  check('kid duo', free.v1 > 3 && free.v2 > 3, free);
+  await p.click('#duo-menu'); await p.waitForTimeout(300);
+  const fm = { restart: await p.evaluate(() => !!document.getElementById('dlg-restart')), quit: await p.evaluate(() => (document.getElementById('dlg-quit') || {}).textContent) };
+  await p.click('#dlg-quit'); await p.waitForTimeout(300);
+  check('free quit', !fm.restart && fm.quit === 'Back to one player' && (await p.evaluate(() => window.__game.mode)) === 'roam', fm);
+  await p.evaluate(() => { window.__game.store.data.kid = false; });
   check('errors', errs.length === 0, errs.slice(0, 5));
   console.log(bad ? `duelui: ${bad} check(s) failed` : 'duelui: all checks passed');
   await b.close(); process.exit(bad ? 1 : 0);

@@ -150,6 +150,7 @@ input[type="range"]:focus-visible { outline: 3px solid var(--paper); outline-off
 .touch .keys.desk { display: none; } body:not(.touch) .keys.tch { display: none; }
 #go { pointer-events: auto; align-self: start; border: 0; border-radius: 8px; padding: 12px 26px; background: var(--amber); color: var(--ink); font: 700 22px var(--display); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
 #go:hover { background: var(--paper); }
+#quitbtn { pointer-events: auto; align-self: start; margin-left: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 12px 20px; background: var(--panel); color: var(--paper); font: 600 18px var(--display); letter-spacing: .1em; text-transform: uppercase; cursor: pointer; } #quitbtn[hidden] { display: none; }
 #loading { font: 600 16px var(--display); letter-spacing: .12em; text-transform: uppercase; color: var(--dim); }
 #kidbtn { pointer-events: auto; align-self: start; border: 1px solid var(--line); border-radius: 8px; padding: 9px 16px; background: rgba(14,17,20,.55); color: var(--paper); font: 700 16px var(--display); letter-spacing: .08em; text-transform: uppercase; cursor: pointer; }
 #kidbtn[aria-pressed="true"] { background: var(--green); border-color: var(--green); color: var(--ink); }
@@ -388,7 +389,7 @@ body.duo .hud > :not(#toast) { visibility: hidden; } body.duo #touch, body.duo #
   <div id="start">
     <div class="inner">
       <h1>Highline <em>Run</em></h1>
-      <p>Build 28. New: change any key or controller button in the menu, Controls, with button names for Xbox, Switch and PlayStation controllers. Build 27: two players on one screen (menu, Two players) with a keyboard or two controllers. Build 26: in rain the wheels throw mud off dirt and spray off wet roads; in snow, white powder. Tips come at most once a minute. Build 25 added a daily challenge (see the menu), tyre marks and nitro flames. Recent: tips for new players, a nitro kit at the garages, drift scoring and speed traps, and a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
+      <p>Build 29. New: Open map for two players, kid mode in two-player races, front-wheel dirt and tyre tracks on dirt, smoother movement, harder time trial gold. Build 28: change any key or controller button in the menu, Controls, with button names for Xbox, Switch and PlayStation controllers. Build 27: two players on one screen (menu, Two players) with a keyboard or two controllers. Build 26: in rain the wheels throw mud off dirt and spray off wet roads; in snow, white powder. Tips come at most once a minute. Build 25 added a daily challenge (see the menu), tyre marks and nitro flames. Recent: tips for new players, a nitro kit at the garages, drift scoring and speed traps, and a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
       <dl class="keys card desk">
         <dt>W A S D / arrows</dt><dd>Gas, steer, brake. Hold brake at a stop to reverse.</dd>
         <dt>Space · Shift</dt><dd>Handbrake for slides · nitro (once you buy the kit at a garage)</dd>
@@ -403,7 +404,7 @@ body.duo .hud > :not(#toast) { visibility: hidden; } body.duo #touch, body.duo #
         <dt>Road · Flip · ☰</dt><dd>Get unstuck · menu</dd>
       </dl>
       <div id="loading">Building the world…</div>
-      <button id="go" type="button" hidden>Start driving</button>
+      <button id="go" type="button" hidden>Start driving</button><button id="quitbtn" type="button" hidden>Exit game</button>
       <button id="kidbtn" type="button" aria-pressed="false">Kid mode: off</button>
       <p class="kidnote">Kid mode: the car drives itself at a gentle speed, so only steering is needed.</p>
       <p id="saved" hidden></p>

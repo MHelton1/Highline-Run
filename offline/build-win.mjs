@@ -52,6 +52,7 @@ for (const f of readdirSync(dir + '/locales')) if (f !== 'en-US.pak') rmSync(dir
 const app = dir + '/resources/app'; mkdirSync(app, { recursive: true });
 writeFileSync(app + '/package.json', JSON.stringify({ name: 'highline-run', productName: NAME, version: VERSION, main: 'main.js' }, null, 2));
 cpSync(here('app/main.js'), app + '/main.js');
+cpSync(here('app/preload.js'), app + '/preload.js');
 writeFileSync(app + '/index.html', page);
 writeFileSync(app + '/icon.png', imgs[0][1]);
 

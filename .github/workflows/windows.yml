@@ -1,0 +1,34 @@
+# Builds the Windows app (offline/build-win.mjs) on GitHub after each update to the game and posts it as the
+# "windows" Release, replacing the one before, so the download link always has the latest build.
+name: Windows download
+on:
+  push:
+    branches: [main]
+    paths: ['src/**', 'template.html', 'build.mjs', 'package.json', 'offline/**', '.github/workflows/windows.yml']
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: windows-download
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install
+        run: npm install --no-audit --no-fund
+      - name: Build the game and the Windows app
+        run: |
+          node build.mjs
+          node offline/build-win.mjs
+      - name: Post the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete windows --yes --cleanup-tag || true
+          gh release create windows dist/Highline-Run-Windows.zip dist/offline.html \
+            --target "$GITHUB_SHA" --title "Highline Run for Windows" --notes-file offline/RELEASE.md --latest

@@ -22,13 +22,18 @@ if (/https?:\/\/(?!www\.w3\.org)/.test(page.replace(/<script>[\s\S]*<\/script>/,
 writeFileSync(dist('offline.html'), page);
 console.log('offline.html', (page.length / 1024 | 0) + ' KB');
 
-// 2. the icon: drawn in offline/icon.html, saved at four sizes, packed into an .ico
-const { chromium } = require('playwright');
-const b = await chromium.launch(); const pg = await b.newPage();
-await pg.goto('file://' + here('icon.html'));
-const pngs = await pg.evaluate(() => [256, 48, 32, 16].map((n) => { const c = document.createElement('canvas'); c.width = c.height = n; const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(document.getElementById('c'), 0, 0, n, n); return [n, c.toDataURL('image/png').split(',')[1]]; }));
-await b.close();
-const imgs = pngs.map(([n, d]) => [n, Buffer.from(d, 'base64')]);
+// 2. the icon: drawn in offline/icon.html at four sizes and kept in offline/icons/ (so a build without a browser can use
+// them; delete that folder to draw them again), then packed into an .ico
+const SIZES = [256, 48, 32, 16], icon = (n) => here(`icons/icon-${n}.png`);
+if (!SIZES.every((n) => existsSync(icon(n)))) {
+  const { chromium } = require('playwright');
+  const b = await chromium.launch(); const pg = await b.newPage();
+  await pg.goto('file://' + here('icon.html'));
+  const pngs = await pg.evaluate((sizes) => sizes.map((n) => { const c = document.createElement('canvas'); c.width = c.height = n; const x = c.getContext('2d'); x.imageSmoothingQuality = 'high'; x.drawImage(document.getElementById('c'), 0, 0, n, n); return c.toDataURL('image/png').split(',')[1]; }), SIZES);
+  await b.close();
+  mkdirSync(here('icons'), { recursive: true }); SIZES.forEach((n, i) => writeFileSync(icon(n), Buffer.from(pngs[i], 'base64')));
+}
+const imgs = SIZES.map((n) => [n, readFileSync(icon(n))]);
 const head = Buffer.alloc(6 + 16 * imgs.length); head.writeUInt16LE(0, 0); head.writeUInt16LE(1, 2); head.writeUInt16LE(imgs.length, 4);
 let off = head.length;
 imgs.forEach(([n, png], i) => { const o = 6 + 16 * i; head[o] = n & 255; head[o + 1] = n & 255; head.writeUInt16LE(1, o + 4); head.writeUInt16LE(32, o + 6); head.writeUInt32LE(png.length, o + 8); head.writeUInt32LE(off, o + 12); off += png.length; });

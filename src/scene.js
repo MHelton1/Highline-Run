@@ -37,7 +37,7 @@ function grainTexture() {
 export const GROUND_FX = { snow: { value: 0 } };
 export function buildTerrain(world, scene) {
   const { heights, normals, snowT, rockT, roadDist, noise } = world;
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: true }), grain = grainTexture();
+  const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), grain = grainTexture();   // (both sides, for the skirts)
   mat.onBeforeCompile = (sh) => {
     sh.uniforms.grain = { value: grain }; sh.uniforms.snowAmt = GROUND_FX.snow;
     sh.vertexShader = 'attribute vec2 gpos;\nvarying vec2 vGround;\nvarying float vUpN;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n  vGround = gpos; vUpN = objectNormal.y;');
@@ -50,15 +50,26 @@ export function buildTerrain(world, scene) {
   const CH = 64, per = CH + 1, group = new THREE.Group();
   // where each point sits inside its own block of ground, in metres: the same for every block, and the grain's two
   // tile sizes divide a block exactly, so the pattern carries on unbroken from one block to the next
-  const gpos = new Float32Array(per * per * 2);
+  // Each block also has a skirt: its edge points again, a few metres lower, so a block drawn coarse (every other
+  // point, far away) shows no gaps against a fine neighbour.
+  const rim = []; for (let i = 0; i < CH; i++) rim.push(i); for (let j = 0; j < CH; j++) rim.push(j * per + CH); for (let i = CH; i > 0; i--) rim.push(CH * per + i); for (let j = CH; j > 0; j--) rim.push(j * per);
+  const NV = per * per + rim.length;
+  const gpos = new Float32Array(NV * 2);
   for (let j = 0; j < per; j++) for (let i = 0; i < per; i++) { gpos[(j * per + i) * 2] = i * CELL; gpos[(j * per + i) * 2 + 1] = j * CELL; }
+  rim.forEach((v, k) => { gpos[(per * per + k) * 2] = gpos[v * 2]; gpos[(per * per + k) * 2 + 1] = gpos[v * 2 + 1]; });
   const gposAttr = new THREE.BufferAttribute(gpos, 2);
-  const index = new Uint16Array(CH * CH * 6);
-  for (let j = 0, k = 0; j < CH; j++) for (let i = 0; i < CH; i++) {
-    const a = j * per + i, b = a + 1, c = a + per, d = c + 1;
-    index[k++] = a; index[k++] = c; index[k++] = b; index[k++] = b; index[k++] = c; index[k++] = d;
-  }
-  const indexAttr = new THREE.BufferAttribute(index, 1);
+  const grid = (step) => {
+    const out = [];
+    for (let j = 0; j < CH; j += step) for (let i = 0; i < CH; i += step) {
+      const a = j * per + i, b = a + step, c = a + per * step, d = c + step;
+      out.push(a, c, b, b, c, d);
+    }
+    // the skirt, round the edge (on the rim points this step keeps)
+    const keep = rim.map((v, k) => k).filter((k) => { const v = rim[k], i = v % per, j = (v / per) | 0; return i % step === 0 && j % step === 0; });
+    for (let q = 0; q < keep.length; q++) { const k0 = keep[q], k1 = keep[(q + 1) % keep.length], a = rim[k0], b = rim[k1], A = per * per + k0, B = per * per + k1; out.push(a, A, b, b, A, B); }
+    return new THREE.BufferAttribute(new Uint16Array(out), 1);
+  };
+  const indexAttr = grid(1), levels = [indexAttr, grid(2), grid(4)];
   const dry = world.regionDef && world.regionDef.ground === 'desert', sea = world.sea;
   // mountain: grass, tundra up high, grey rock, snow. desert: sand, desert varnish up high, red rock in bands, no snow.
   const [gA, gB, tundra, rA, rB, snow, gravel, tH] = dry
@@ -66,7 +77,7 @@ export function buildTerrain(world, scene) {
     : sea != null ? [[0.30, 0.45, 0.18], [0.45, 0.51, 0.24], [0.44, 0.46, 0.28], [0.44, 0.42, 0.38], [0.58, 0.55, 0.50], [0.93, 0.95, 0.98], [0.45, 0.40, 0.33], 150]
     : [[0.27, 0.40, 0.17], [0.40, 0.46, 0.20], [0.47, 0.44, 0.29], [0.40, 0.38, 0.36], [0.52, 0.48, 0.43], [0.93, 0.95, 0.98], [0.45, 0.40, 0.33], 215];
   for (let cj = 0; cj < N / CH; cj++) for (let ci = 0; ci < N / CH; ci++) {
-    const pos = new Float32Array(per * per * 3), nor = new Float32Array(per * per * 3), col = new Float32Array(per * per * 3);
+    const pos = new Float32Array(NV * 3), nor = new Float32Array(NV * 3), col = new Float32Array(NV * 3);
     for (let j = 0; j < per; j++) for (let i = 0; i < per; i++) {
       const gi = ci * CH + i, gj = cj * CH + j, v = gj * V + gi, o = (j * per + i) * 3;
       const x = gi * CELL - HALF, z = gj * CELL - HALF, h = heights[v];
@@ -82,12 +93,22 @@ export function buildTerrain(world, scene) {
       const shade = 0.9 + 0.2 * n2;
       col[o] = lin(c[0] * shade); col[o + 1] = lin(c[1] * shade); col[o + 2] = lin(c[2] * shade);
     }
+    rim.forEach((v, k) => { const o = (per * per + k) * 3; for (let c = 0; c < 3; c++) { pos[o + c] = pos[v * 3 + c]; nor[o + c] = nor[v * 3 + c]; col[o + c] = col[v * 3 + c]; } pos[o + 1] -= 3; });
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     g.setAttribute('gpos', gposAttr); g.setIndex(indexAttr); g.computeBoundingSphere();
-    const m = new THREE.Mesh(g, mat); m.receiveShadow = true; group.add(m);
+    const m = new THREE.Mesh(g, mat); m.receiveShadow = true; m.userData.lvl = 0; group.add(m);
   }
   scene.add(group);
+  // blocks further than `far` metres from the camera are drawn with every other point (a quarter of the triangles),
+  // and past 2.5 times that with every fourth point (one sixteenth): far off in the haze nobody can tell
+  group.userData.lod = (cam, far = 650) => {
+    for (const m of group.children) {
+      const c = m.geometry.boundingSphere.center, d = Math.hypot(c.x - cam.x, c.z - cam.z) - m.geometry.boundingSphere.radius;
+      const lvl = d > far * 2.5 ? 2 : d > far ? 1 : 0;
+      if (lvl !== m.userData.lvl) { m.userData.lvl = lvl; m.geometry.setIndex(levels[lvl]); }
+    }
+  };
   return group;
 }
 
@@ -172,7 +193,7 @@ export function buildTrees(world, scene, shadows) {
 #endif`);
   };
   // one instanced mesh per map region, so trees off screen (and outside the shadow area) are skipped
-  const R = 8, cells = new Map(), meshes = [];
+  const R = Math.round(8 * HALF / 1536), cells = new Map(), meshes = [];
   for (const t of world.trees) { const k = Math.min(R - 1, ((t.x + HALF) / (2 * HALF) * R) | 0) * R + Math.min(R - 1, ((t.z + HALF) / (2 * HALF) * R) | 0); if (!cells.has(k)) cells.set(k, []); cells.get(k).push(t); }
   const d = new THREE.Object3D(), col = new THREE.Color();
   for (const list of cells.values()) {
@@ -214,7 +235,7 @@ function buildCacti(world, scene, shadows) {
     shapes.push(f.done());
   }
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true }), d = new THREE.Object3D(), col = new THREE.Color(), meshes = [];
-  const R = 8, cells = new Map();
+  const R = Math.round(8 * HALF / 1536), cells = new Map();
   for (const t of world.trees) { const k = (Math.min(R - 1, ((t.x + HALF) / (2 * HALF) * R) | 0) * R + Math.min(R - 1, ((t.z + HALF) / (2 * HALF) * R) | 0)) * 4 + (((t.r * 5.17) % 1) * 4 | 0); if (!cells.has(k)) cells.set(k, []); cells.get(k).push(t); }
   for (const [k, list] of cells) {
     const m = new THREE.InstancedMesh(shapes[k % 4], mat, list.length);
@@ -251,7 +272,7 @@ export function buildProps(world, scene, amount = 1) {
   const bushM = new THREE.MeshLambertMaterial({ vertexColors: true }), stoneM = new THREE.MeshLambertMaterial({ color: 0xffffff, flatShading: true });
   const R = 12, cell = SIZE_ / R, bins = new Map(), bin = (kind, x, z) => { const k = kind + ':' + Math.min(R - 1, ((x + HALF) / cell) | 0) + ':' + Math.min(R - 1, ((z + HALF) / cell) | 0); let l = bins.get(k); if (!l) bins.set(k, l = []); return l; };
   const at = (x, z) => { const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL); return j * V + i; };
-  const span = 2 * HALF - 60, nBush = Math.round((dry ? 30000 : 46000) * amount), nStone = Math.round((dry ? 34000 : 26000) * amount);
+  const span = 2 * HALF - 60, fill = (HALF / 1536) ** 2, nBush = Math.round((dry ? 30000 : 46000) * amount * fill), nStone = Math.round((dry ? 34000 : 26000) * amount * fill);   // fill: the same density on a bigger map
   for (let n = 0; n < nBush; n++) {
     const x = (rnd() - 0.5) * span, z = (rnd() - 0.5) * span, v = at(x, z), keep = rnd(), size = rnd(), turn = rnd(), hue = rnd();
     if (surf[v] !== 2 || roadDist[v] < 8.5 || normals[v * 3 + 1] < 0.8 || snowT[v] > 0.05 || world.inTown(x, z)) continue;

@@ -204,7 +204,8 @@ export class Game {
     while (this.offers.length < 3 && pool.length) {
       const p = this.player.pos; pool.sort((a, b) => Math.hypot(a.x - p.x, a.z - p.z) - Math.hypot(b.x - p.x, b.z - p.z));
       const k = Math.min(pool.length - 1, (Math.random() * Math.min(5, pool.length)) | 0), site = pool.splice(k, 1)[0];
-      this.offers.push(site); this.kinds.set(site, this.pickKind());
+      let kind = this.pickKind(); if (site.outer && CARGO[kind].rival) kind = 'freight';   // the rival runs stay on the first map's ground
+      this.offers.push(site); this.kinds.set(site, kind);
     }
   }
   // a kind for a new offer: the first run is always plain freight, and no two offers on the board are the same special kind
@@ -217,9 +218,9 @@ export class Game {
   }
   kindOf(site) { return this.kinds.get(site) || 'freight'; }
   startJob(from, kind = this.kindOf(from)) {
-    const K = CARGO[kind], c = this.sites.filter((s) => s !== from && Math.hypot(s.x - from.x, s.z - from.z) > 700);
+    const K = CARGO[kind], c = this.sites.filter((s) => s !== from && Math.hypot(s.x - from.x, s.z - from.z) > 700 && !(K.rival && s.outer));
     const to = c[(Math.random() * c.length) | 0], dist = Math.hypot(to.x - from.x, to.z - from.z);
-    const wild = to.wild || from.wild, time = Math.round((dist * 1.45 / (wild ? 16 : 21) + 20) * K.time * (this.kid ? KID.time : 1));
+    const wild = to.wild || from.wild, time = Math.round((dist * 1.45 / (wild ? 16 : 21) + 20) * K.time * (this.kid ? KID.time : 1) * (to.outer || from.outer ? 1.25 : 1));   // the outer loop's pickups are further round by road
     const pay = Math.round((250 + dist * 0.75) * (wild ? 1.35 : 1) * K.pay * (this.player.spec.payBonus || 1) / 10) * 10;
     this.job = { from, to, pay, time, left: time, cond: 1, dist, kind };
     if (K.rival) this.rival = new Rival(this.world, from, to, time * RIVAL_DUE);

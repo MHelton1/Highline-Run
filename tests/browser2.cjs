@@ -10,7 +10,7 @@ const FULL = { steer: 0, throttle: 1, brake: 0, handbrake: false, analog: true }
   const b = await chromium.launch({ args });
   const newPage = async (init) => {
     const ctx = mode === 'desk' ? await b.newContext({ viewport: { width: 1280, height: 720 } }) : await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 1 });
-    const p = await ctx.newPage(); p.errs = [];
+    const p = await ctx.newPage(); p.setDefaultTimeout(90000); p.errs = [];
     p.on('console', m => { if (m.type() === 'error') p.errs.push(m.text()); }); p.on('pageerror', e => p.errs.push('PAGEERR ' + e.message));
     if (init) await p.addInitScript(init);
     await p.goto('file://' + path.join(__dirname, '..', 'dist', 'local.html') + (process.env.REGION ? '#r=' + process.env.REGION : ''));

@@ -14,7 +14,7 @@ const OUT = process.argv[2] || path.join(__dirname, 'shots'), R = process.env.RE
   await p.waitForSelector('#go:not([hidden])', { timeout: 180000 });
   await p.click('#go'); await p.evaluate(() => { const g = window.__game; g.pinQuality(2); g.setWeather('clear'); });
   const info = await p.evaluate(() => { const w = window.__game.world; return w.towns.map((t) => ({ name: t.name, n: t.buildings.length, lamps: t.lamps.length, signs: t.signs.length })); });
-  check('towns', info.length === 2 && info.every((t) => t.n >= 30 && t.lamps > 10 && t.signs === 2), info);
+  check('towns', info.length === 3 && info.every((t) => t.n >= 30 && t.lamps > 10 && t.signs === 2), info);
   // drive in along the ring road from before the first sign
   await p.evaluate(() => { const g = window.__game, w = g.world, r = w.roads[0], t = w.towns[0], i = ((t.from - 30) % r.n + r.n) % r.n, f = w.frame(r, i); g.car.place(f.x, f.z, f.yaw, 0.3); g.advance(0.5); window.__lastToast = ''; });
   const entry = await p.evaluate(() => { const g = window.__game, w = g.world, r = w.roads[0], out = [];

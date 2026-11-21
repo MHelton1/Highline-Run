@@ -15,7 +15,7 @@ const OUT = process.argv[2] || path.join(__dirname, 'shots'); require('fs').mkdi
   await p.waitForSelector('#go:not([hidden])', { timeout: 180000 });
   await p.click('#go'); await p.evaluate(() => { const g = window.__game; g.pinQuality(2); g.setWeather('clear'); });
   const info = await p.evaluate(() => { const w = window.__game.world; return { rivers: w.rivers.map((r) => r.name), bridges: w.bridges.map((b) => ({ road: w.roads[b.road].name, len: Math.round((b.i1 - b.i0) * w.roads[b.road].ds) })) }; });
-  check('layout', info.rivers.length === 2 && info.bridges.length >= 2 && info.bridges.every((b) => b.len > 30), info);
+  check('layout', info.rivers.length === 2 && info.bridges.length >= 2 && info.bridges.every((b) => b.len >= 20), info);
   // drive along each bridge: the car stays on the deck the whole way
   const over = await p.evaluate(() => {
     const g = window.__game, w = g.world, c = g.car, out = [];

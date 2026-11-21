@@ -174,7 +174,7 @@ function start(hot) {
   if (S().tod !== 'day') setTime(S().tod);
   if (S().weather !== 'auto') { const f = fixedWeather(S().weather, world.region); if (f && f !== 'clear') { WX.now = WX.from = f; WX.cur = blendWeather(f, f, 1); applyAll(true); } }
   if (!(S().stats[world.region] || {}).v) { bump(S(), world.region, 'v'); store.commit(); }
-  buildTerrain(world, scene); buildSea(world, scene); buildRivers(world, scene); buildRoads(world, scene); buildBridges(world, scene); townVis = buildTowns(world, scene); if (townVis) townVis.glow(night); const treeMeshes = buildTrees(world, scene, shadows), smallMeshes = buildProps(world, scene, coarse ? 0.7 : 1);
+  const ground = buildTerrain(world, scene); buildSea(world, scene); buildRivers(world, scene); buildRoads(world, scene); buildBridges(world, scene); townVis = buildTowns(world, scene); if (townVis) townVis.glow(night); const treeMeshes = buildTrees(world, scene, shadows), smallMeshes = buildProps(world, scene, coarse ? 0.7 : 1);
   buildSites(game.sites, scene); buildGarages(garages, scene); buildLines(world, scene, races);
   // ---- hidden finds: crates to pick up, an old car in a shed, and ramps (laid into the ground after the terrain is drawn) ----
   addRamps(world, finds.ramps); buildRamps(world, finds.ramps, scene, RAMP);
@@ -317,7 +317,9 @@ function start(hot) {
 
   // ---- minimap: north (+z) is up, which puts +x on the left, as in a true view from above ----
   const mm = $('minimap'), mctx = mm.getContext('2d'), MM = 300, K = MM / SIZE; mm.width = mm.height = MM;
-  const mx = (x) => (HALF - x) * K, my = (z) => (HALF - z) * K;
+  // on a big map the corner map shows a window round the car (MV), cut from the whole map painted once at MB pixels
+  const MV = { cx: 0, cz: 0, span: Math.min(SIZE, 3300) }, MB = Math.round(MM * SIZE / MV.span);
+  const mx = (x) => (MV.cx + MV.span / 2 - x) * MM / MV.span, my = (z) => (MV.cz + MV.span / 2 - z) * MM / MV.span;
   // the still part of the map (roads, sea, ramps, garages, race starts), painted once per size: the corner map, and the big map
   let seaImg = null;
   function paintBase(N, ls = 1, q = 1, v = { cx: 0, cz: 0, span: SIZE }) {   // ls: road width scale, q: symbol scale, v: the square shown
@@ -348,7 +350,7 @@ function start(hot) {
     for (const z of zones) { const x = fx(z.x), y = fy(z.z); g.save(); g.translate(x, y); g.scale(q, q); g.lineWidth = 2.5; g.fillStyle = z.kind === 'garage' ? '#4f9dff' : '#a283ff'; g.beginPath(); if (z.kind === 'garage') g.rect(-7, -7, 14, 14); else { g.moveTo(0, -10); g.lineTo(9, 0); g.lineTo(0, 10); g.lineTo(-9, 0); g.closePath(); } g.fill(); g.stroke(); g.restore(); }
     return c;
   }
-  const mapBase = paintBase(MM);
+  const mapBase = paintBase(MB);
 
   // ---- input, modes ----
   // title: the opening screen. roam: free driving with cargo runs. garage, offer (a race card), race, results.
@@ -1075,6 +1077,8 @@ function start(hot) {
       if (u.kind === 'mud' && u.vy < 0) { const gy = world.sample(d.position.x, d.position.z) + 0.12; if (d.position.y < gy) { d.position.y = gy; u.vx = u.vz = u.vy = 0; u.g = 0; } } }   /* mud lands and stays on the ground */ const sc = (0.8 + t * (u.grow ?? 4.5)) * u.size; d.scale.set(sc, sc, 1); d.material.opacity = (u.alpha ?? 0.42) * (u.kind === 'mud' ? 1 - t * t : 1 - t) * Math.min(1, t * (u.kind === 'mud' ? 30 : 8)); }
 
     updateCamera(dt);
+    ground.userData.lod(camera.position);
+    for (const m of treeMeshes) m.visible = camera.position.distanceTo(m.boundingSphere.center) < m.boundingSphere.radius + 2600;   // tree blocks out past the haze are skipped
     for (const m of smallMeshes) m.visible = quality < 4 && camera.position.distanceTo(m.boundingSphere.center) < m.boundingSphere.radius + SMALL_FAR;   // bushes and stones: nearby blocks only
     // light columns: each one fades out as the camera comes close, so the picture is never tinted by standing in or beside one
     const lit = (b, on, r, at) => {
@@ -1144,7 +1148,8 @@ function start(hot) {
       el.bust.style.transform = `scaleX(${Math.min(1, game.bust).toFixed(2)})`; el.bustRow.hidden = game.bust < 0.03;
     }
     // minimap
-    mctx.clearRect(0, 0, MM, MM); mctx.drawImage(mapBase, 0, 0);
+    { const lim = HALF - MV.span / 2; MV.cx = Math.max(-lim, Math.min(lim, car.pos.x)); MV.cz = Math.max(-lim, Math.min(lim, car.pos.z)); }
+    mctx.clearRect(0, 0, MM, MM); { const k = MB / SIZE; mctx.drawImage(mapBase, (HALF - MV.cx - MV.span / 2) * k, (HALF - MV.cz - MV.span / 2) * k, MV.span * k, MV.span * k, 0, 0, MM, MM); }
     if (racing) {
       for (let i = race.gates.length - 1; i >= race.gate; i--) { const gt = race.gates[i]; if (i === race.gate) dot(gt.x, gt.z, 8, '#62dcea'); else dot(gt.x, gt.z, 3.5, i === race.gates.length - 1 ? '#f3efe4' : '#62dcea'); }
       for (const r of race.rivals) dot(r.car.pos.x, r.car.pos.z, 5, hex(PAINTS[r.paint].hex), true);

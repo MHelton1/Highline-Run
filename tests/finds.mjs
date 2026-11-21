@@ -16,7 +16,7 @@ for (const r of regions) {
   const races = buildRaces(w), f = placeFinds(w, races), f2 = placeFinds(w, races);
   check(r + ' counts', f.crates.length === CRATES && f.ramps.length === 3 && !!f.barn, { crates: f.crates.length, ramps: f.ramps.length });
   check(r + ' same every time', JSON.stringify(f) === JSON.stringify(f2), '');
-  const rc = (x, z) => w.reach[Math.round((z + w.half) / (3072 / w.reachN)) * w.reachN + Math.round((x + w.half) / (3072 / w.reachN))];
+  const rc = (x, z) => w.reach[Math.round((z + w.half) / (2 * w.half / w.reachN)) * w.reachN + Math.round((x + w.half) / (2 * w.half / w.reachN))];
   check(r + ' reachable', [...f.crates, f.barn, ...f.ramps].every((p) => rc(p.x, p.z)), '');
   check(r + ' dry', w.sea == null || [...f.crates, f.barn, ...f.ramps].every((p) => p.y > w.sea + 2), '');
   const h = barnHint(w, f.barn); check(r + ' barn hint', !!h.from && h.dist > 0, `${h.dist} m ${h.dir} of ${h.from}`);

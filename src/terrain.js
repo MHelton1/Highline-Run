@@ -1,5 +1,5 @@
 // World data: heightfield, roads, surface types. Pure math, no rendering (runs in node for tests).
-export const SIZE = 3072, N = 768, CELL = SIZE / N, HALF = SIZE / 2, V = N + 1;
+export const SIZE = 4608, N = 1152, CELL = SIZE / N, HALF = SIZE / 2, V = N + 1;
 import { REGIONS } from './regions.js';
 export const SNOWLINE = 250, TREELINE = 222;
 export const SURF = { ASPHALT: 0, DIRT: 1, GRASS: 2, ROCK: 3, SNOW: 4 };
@@ -128,7 +128,12 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     const z = z0 + 110 * noise2(x0 / 650 - 14.2, z0 / 650 + 8.8) + 28 * noise2(x0 / 180 + 21, z0 / 180 - 7);
     const r = Math.hypot(x, z), a = Math.atan2(z, x), edge = 1290 + 120 * noise2(Math.cos(a) * 1.7 + 3, Math.sin(a) * 1.7 - 2) + 50 * noise2(Math.cos(a) * 5, Math.sin(a) * 5 + 7);
     const cliff = smooth((noise2(Math.cos(a) * 1.4 - 6, Math.sin(a) * 1.4 + 4) - 0.05) / 0.25);         // stretches of cliff
-    const width = 240 - 180 * cliff, land = smooth((edge - r) / width);
+    const width = 240 - 180 * cliff;
+    let land = smooth((edge - r) / width);
+    if (HALF > 1600 && RG.outer) {   // bigger maps: a broken ring of islands out past a sea channel, for the outer loop road
+      const R2 = HALF * 0.74 + 160 * noise2(Math.cos(a) * 1.6 + 21, Math.sin(a) * 1.6 - 13), w2 = 150 + 120 * noise2(Math.cos(a) * 2.6 + 9, Math.sin(a) * 2.6 - 4) + 40 * noise2(x / 300, z / 300);
+      land = Math.max(land, smooth((w2 - Math.abs(r - R2)) / 110));
+    }
     let hills = 0, amp = 1, freq = 1 / 900, sum = 0;
     for (let o = 0; o < 4; o++) { hills += (0.5 + 0.5 * noise(x * freq + o * 9.1, z * freq - o * 4.7)) * amp; sum += amp; amp *= 0.42; freq *= 2.1; }
     hills /= sum;
@@ -243,6 +248,48 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     h.set(mid, k0);
     roads.push({ ...s, h, closed: false, hw: 3.5, surf: SURF.DIRT, blend: 95, name: RG.trail });
   }
+  // ---- the outer country (maps bigger than the first 3072 m): a second loop road out past the ring road, joined to
+  // it by spokes. Over the sea a new road is lifted well clear of the water (the bridge finder below gives it a deck).
+  const OUTER = HALF > 1600 && RG.outer && opts.outer !== false;
+  const seaLift = (s, h, pinned) => {
+    if (SEA === null) return;
+    const need = new Float32Array(s.n); for (let i = 0; i < s.n; i++) need[i] = natural(s.x[i], s.z[i]) < SEA + 2 ? SEA + 7 : SEA + 4;
+    const lift = new Float32Array(s.n), gap = (i) => Math.max(0, need[i] - h[i]);
+    for (let k = 0; k < 4; k++) { for (let i = 0; i < s.n; i++) lift[i] = Math.max(lift[i], gap(i)); blur(lift, 25, !pinned, 1, pinned && [0, 0]); }
+    for (let i = 0; i < s.n; i++) h[i] += Math.max(lift[i], gap(i));
+  };
+  if (OUTER) {
+    const K = 24, cps = [], R2 = HALF * 0.74;
+    for (let i = 0; i < K; i++) {
+      const a = i / K * Math.PI * 2, r = R2 + 160 * noise2(Math.cos(a) * 1.6 + 21, Math.sin(a) * 1.6 - 13) + 60 * noise2(Math.cos(a) * 4.5 - 3, Math.sin(a) * 4.5 + 8);
+      cps.push([Math.cos(a) * r, Math.sin(a) * r]);
+    }
+    const s = resample(catmull(cps, true, 60), true, 2), h = new Float32Array(s.n);
+    for (let i = 0; i < s.n; i++) h[i] = natural(s.x[i], s.z[i]);
+    blur(h, 70, true, 3); limitSlope(h, s.ds, 0.09, true); blur(h, 12, true, 2); seaLift(s, h, false); clearRivers(s, h, true);
+    roads.push({ ...s, h, closed: true, hw: 4.5, surf: SURF.ASPHALT, blend: 180, name: RG.outer.name, outer: true });
+    // spokes: from the ring road out to the loop, each lying on both roads' own surface at its ends
+    const ringR = roads[0], loop = roads[roads.length - 1];
+    const nearOn = (L, x, z) => { let m = 1e18, k = 0; for (let i = 0; i < L.n; i++) { const d = (L.x[i] - x) ** 2 + (L.z[i] - z) ** 2; if (d < m) { m = d; k = i; } } return [Math.sqrt(m), L.h[k], k]; };
+    RG.outer.spokes.forEach(([frac, name, dirt], k) => {
+      const iA = Math.floor(ringR.n * frac), A = [ringR.x[iA], ringR.z[iA]], ang = Math.atan2(A[1], A[0]);
+      const [, , kB] = nearOn(loop, Math.cos(ang) * R2, Math.sin(ang) * R2), B = [loop.x[kB], loop.z[kB]];
+      const dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz), px = -dz / len, pz = dx / len, M = Math.max(3, Math.round(len / 120)), c = [A];
+      for (let m = 1; m < M; m++) { const t = m / M, wig = 70 * noise2(m * 0.9 + k * 5.1, 2.3 + k) * Math.sin(Math.PI * t); c.push([A[0] + dx * t + px * wig, A[1] + dz * t + pz * wig]); }
+      c.push(B);
+      const sp = resample(catmull(c, false, 60), false, 2), hh = new Float32Array(sp.n);
+      let k0 = 0, k1 = sp.n - 1;
+      for (let i = 0; i < sp.n; i++) {
+        const [d0, h0] = nearOn(ringR, sp.x[i], sp.z[i]), [d1, h1] = nearOn(loop, sp.x[i], sp.z[i]);
+        hh[i] = d0 < 17 ? h0 : d1 < 17 ? h1 : natural(sp.x[i], sp.z[i]);
+        if (d0 < 17) k0 = Math.max(k0, i); if (d1 < 17 && k1 === sp.n - 1 && i > sp.n / 2) k1 = i;
+      }
+      const mid = hh.slice(k0, k1 + 1), pin = [hh[k0], hh[k1]], sub = { x: sp.x.subarray(k0, k1 + 1), z: sp.z.subarray(k0, k1 + 1), n: mid.length };
+      blur(mid, 30, false, 3, pin); limitSlope(mid, sp.ds, dirt ? 0.16 : 0.1, false, pin); blur(mid, 8, false, 2, pin); seaLift(sub, mid, true); clearRivers(sub, mid, false, pin);
+      hh.set(mid, k0);
+      roads.push({ ...sp, h: hh, closed: false, hw: dirt ? 3.5 : 4.5, surf: dirt ? SURF.DIRT : SURF.ASPHALT, blend: dirt ? 95 : 150, name, spoke: true });
+    });
+  }
 
   // ---- places: garages and pull-outs beside the roads, camps out in the wild, race start lines ----
   // Chosen before the ground is shaped, so each place gets a flat lot cut into the terrain.
@@ -279,6 +326,18 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     const [hutX, hutZ] = beside(f, side, trail.hw + 9);
     places.sites.push({ name, x: f.x, z: f.z, wild: true, hutX, hutZ, yaw: f.yaw });
   });
+  // bigger maps: pickups along the outer loop (listed after the camps, so the camps keep their spots) and its town
+  const outerSites = [];
+  if (OUTER) {
+    const ri = roads.findIndex((q) => q.outer), loop = roads[ri];
+    RG.outer.sites.forEach((name, k) => {
+      const idx = Math.floor(loop.n * [0.1, 0.43, 0.77][k]), f = frame(loop, idx), side = k % 2 ? 1 : -1;
+      shoulders.push({ r: ri, idx, side, f, len: 9, width: 13 });
+      const [x, z] = beside(f, side, loop.hw + 3), [hutX, hutZ] = beside(f, side, loop.hw + 18);
+      outerSites.push({ name, x, z, wild: false, hutX, hutZ, yaw: f.yaw, outer: true });
+    });
+    places.outerTown = { idx: flattest(loop, 0.6, 60) };
+  }
   // pull-in where the off-road time trial starts (its checkpoints are chosen further down, once the ground is shaped)
   {
     const idx = flattest(ring, 0.36, 30), f = frame(ring, idx);
@@ -304,6 +363,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
 
   // Stamp roads into the heightfield. Each vertex is pulled toward every nearby road's height, weighted so that
   // the closest road wins outright on its own bed and the hand-over between two roads is smooth.
+  const pre = OUTER && SEA !== null ? Float32Array.from(heights) : null;   // the ground before the roads, for the sea under new roads
   const roadDist = new Float32Array(V * V).fill(1e9);
   for (const road of roads) road.ref = new Int32Array(V * V).fill(-1);
   const stamps = roads.map((road) => {
@@ -331,13 +391,25 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       const d = Math.sqrt(st.d2[v]); if (d >= road.blend) continue;
       const extra = shoulders.length ? shoulderAt(r, road, st.idx[v], x, z) : 0;
       const inner = road.hw + 6 + extra, a = 1 - smooth((d - inner) / (road.blend - inner));
-      const wgt = a / (1 - a + (r === 0 ? 1e-5 : 1e-3));          // the ring road has the last word on its own bed
+      const wgt = a / (1 - a + (r === 0 || roads[r].outer ? 1e-5 : 1e-3));          // the ring road has the last word on its own bed
       // the bed sits well under the road ribbon, and only a small step below it beside the road
       wSum += wgt; tSum += wgt * (road.h[st.idx[v]] - (d < road.hw + 1 ? 0.3 : 0.14)); keep *= 1 - a;
       if (d < road.hw + 8) road.ref[v] = st.idx[v];
       const de = Math.max(0, d - extra); if (de < roadDist[v]) roadDist[v] = de;
     }
     if (wSum > 0) heights[v] = heights[v] * keep + (tSum / wSum) * (1 - keep);
+  }
+
+  // Where an outer road crosses the sea, put the sea floor back under it, so the road stands on a bridge, not a dam.
+  if (pre) for (const road of roads) {
+    if (!road.outer && !road.spoke) continue;
+    const R = Math.ceil((road.hw + 12) / CELL);
+    for (let s = 0; s < road.n; s += 2) {
+      const ci = Math.round((road.x[s] + HALF) / CELL), cj = Math.round((road.z[s] + HALF) / CELL);
+      for (let j = Math.max(0, cj - R); j <= Math.min(N, cj + R); j++) for (let i = Math.max(0, ci - R); i <= Math.min(N, ci + R); i++) {
+        const v = j * V + i; if (pre[v] < SEA - 0.5 && pre[v] < heights[v]) heights[v] = pre[v];
+      }
+    }
   }
 
   // Cut the river valleys: a channel, a low bank either side, then valley sides of about 22 degrees up to the ground.
@@ -405,6 +477,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
         break;
       }
     }
+    places.sites.push(...outerSites);
     // time trial checkpoints: rough waypoints, each moved to the gentlest reachable ground nearby
     const calm = (x0, z0) => {
       let best = null, bs = 1e9;
@@ -448,6 +521,15 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   while (t0 < trail.n - 2 && nearRing(trail.x[t0], trail.z[t0]) < ring.hw - 0.6) t0++;
   while (t1 > 1 && nearRing(trail.x[t1], trail.z[t1]) < ring.hw - 0.6) t1--;
   trail.from = t0; trail.to = t1; ring.from = 0; ring.to = ring.n - 1;
+  for (const road of roads) {     // the outer loop and its spokes (trimmed where a spoke runs onto the road at its end)
+    if (road === ring || road === trail) continue;
+    if (road.closed) { road.from = 0; road.to = road.n - 1; continue; }
+    const loop = roads.find((q) => q.outer), gap = (L, x, z) => { let m = 1e9; for (let i = 0; i < L.n; i += 2) m = Math.min(m, Math.hypot(L.x[i] - x, L.z[i] - z)); return m; };
+    let a = 0, b = road.n - 1;
+    while (a < road.n - 2 && gap(ring, road.x[a], road.z[a]) < ring.hw - 0.6) a++;
+    while (b > 1 && gap(loop, road.x[b], road.z[b]) < loop.hw - 0.6) b--;
+    road.from = a; road.to = b;
+  }
 
   const world = { region: regionId, regionDef: RG, sea: SEA, heights, normals, surf, snowT, rockT, roadDist, roads, noise: noise2, seed, trees: [], treeHash: new Map(), places, frame, half: HALF, reach, reachN: RN, steepR };
 
@@ -468,7 +550,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   world.ground = gridAt;
   // bridges: stretches of road standing more than a metre over the ground below
   world.bridges = [];
-  if (rivers.length) roads.forEach((road, r) => {
+  if (rivers.length || pre) roads.forEach((road, r) => {
     let run = null;
     const flush = () => {
       if (!run) return;
@@ -538,24 +620,30 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   };
 
   // trees
+  // Trees: first the original 3072 m square, drawn exactly as before (so the first maps' trees all stay put), then, on
+  // a bigger map, more in the new land round it at about the same density.
   world.placeTrees = function (count) {
-    const rnd = mulberry32(seed * 31 + 5), q = {};
-    let tries = 0;
-    let skipped = 0;
-    while (world.trees.length + skipped < count && tries++ < count * 12) {
-      const x = (rnd() - 0.5) * (SIZE - 80), z = (rnd() - 0.5) * (SIZE - 80);
-      const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL), v = j * V + i;
-      if (surf[v] !== SURF.GRASS || roadDist[v] < 16 || normals[v * 3 + 1] < 0.86) continue;
-      const h = world.sample(x, z, q);
-      if (h > treeline - rnd() * 50 || (SEA !== null && h < world.waterAt(x, z) + 4)) continue;
-      if (noise2(x / 260 + 40, z / 260) < -0.25 + rnd() * 0.3) continue;
-      const t = { x, z, y: h, s: 0.75 + rnd() * 0.9, r: rnd() * 6.28 };
-      if (world.towns && world.towns.length && world.inTown(x, z)) { skipped++; continue; }   // counted, so every other tree stays put
-      world.trees.push(t);
-      const key = ((x + HALF) >> 4) * 4096 + ((z + HALF) >> 4);
-      if (!world.treeHash.has(key)) world.treeHash.set(key, []);
-      world.treeHash.get(key).push(t);
-    }
+    const q = {}, S0 = Math.min(SIZE, 3072);
+    const plant = (rnd, n, span, outside) => {
+      let tries = 0, skipped = 0, placed = 0;
+      while (placed + skipped < n && tries++ < n * 12) {
+        const x = (rnd() - 0.5) * (span - 80), z = (rnd() - 0.5) * (span - 80);
+        if (outside && Math.abs(x) < S0 / 2 - 40 && Math.abs(z) < S0 / 2 - 40) continue;
+        const i = Math.round((x + HALF) / CELL), j = Math.round((z + HALF) / CELL), v = j * V + i;
+        if (surf[v] !== SURF.GRASS || roadDist[v] < 16 || normals[v * 3 + 1] < 0.86) continue;
+        const h = world.sample(x, z, q);
+        if (h > treeline - rnd() * 50 || (SEA !== null && h < world.waterAt(x, z) + 4)) continue;
+        if (noise2(x / 260 + 40, z / 260) < -0.25 + rnd() * 0.3) continue;
+        const t = { x, z, y: h, s: 0.75 + rnd() * 0.9, r: rnd() * 6.28 };
+        if (world.towns && world.towns.length && world.inTown(x, z)) { skipped++; continue; }   // counted, so every other tree stays put
+        world.trees.push(t); placed++;
+        const key = ((x + HALF) >> 4) * 4096 + ((z + HALF) >> 4);
+        if (!world.treeHash.has(key)) world.treeHash.set(key, []);
+        world.treeHash.get(key).push(t);
+      }
+    };
+    plant(mulberry32(seed * 31 + 5), count, S0, false);
+    if (SIZE > S0) plant(mulberry32(seed * 31 + 77), Math.round(count * (SIZE * SIZE / (S0 * S0) - 1) * 0.8), SIZE, true);
   };
   // solid things the cars can hit, kept in the same 16 m buckets as the trees
   world.addCollider = function (x, z, rad) {
@@ -576,6 +664,8 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     for (const sg of [-1, 1]) world.addCollider(f.x + f.lx * sg * (road.hw + 1.7), f.z + f.lz * sg * (road.hw + 1.7), 1.2);
   }
   { const t = places.trial; t.y = world.sample(t.x, t.z); for (const g of t.gates) g.y = world.sample(g.x, g.z); }
+  // a bridge deck counts as easy, reachable ground for routes (the water or valley under it is a wall)
+  for (const bb of world.bridges) { const road = roads[bb.road]; for (let i = bb.i0; i <= bb.i1; i++) { const c = rcell(road.x[i], road.z[i]); steepR[c] = Math.min(steepR[c], 0.05); reach[c] = 1; } }
   // bridge railings: a row of overlapping round stops just outside each edge, solid only at deck height
   for (const b of world.bridges) {
     const road = roads[b.road];
@@ -588,13 +678,15 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   // building stands on its own plinth, so the ground is not reshaped), plus street lamps and a sign at each end ----
   world.towns = [];
   {
-    const rnd = mulberry32(seed * 53 + 11), n = ring.n, wrap = (i) => ((Math.round(i) % n) + n) % n;
+    const rnd = mulberry32(seed * 53 + 11);
     const keep = [...places.sites.flatMap((q) => [[q.hutX, q.hutZ, 12], [q.x, q.z, 12]]), ...places.garages.flatMap((q) => [[q.bx, q.bz, 26], [q.x, q.z, 42]]),
       ...Object.values(places.lines).map((q) => [q.x, q.z, 12]), [places.trial.x, places.trial.z, 22], ...places.trial.gates.map((q) => [q.x, q.z, 30])];
     const rdAt = (x, z) => roadDist[Math.max(0, Math.min(N, Math.round((z + HALF) / CELL))) * V + Math.max(0, Math.min(N, Math.round((x + HALF) / CELL)))];
     (opts.towns === false ? [] : RG.towns || []).forEach((name, k) => {
-      const g = places.garages[k]; if (!g) return;
-      const span = 115, town = { name, x: g.x, z: g.z, from: g.idx - span, to: g.idx + span, buildings: [], lamps: [], signs: [] }, B = town.buildings;
+      // the first two round the garages on the ring road, a third (bigger maps) on the outer loop
+      const g = k < 2 ? places.garages[k] : places.outerTown; if (!g) return;
+      const road = k < 2 ? ring : roads.find((q) => q.outer), n = road.n, wrap = (i) => ((Math.round(i) % n) + n) % n, f0 = frame(road, g.idx);
+      const span = 115, town = { name, x: k < 2 ? g.x : f0.x, z: k < 2 ? g.z : f0.z, road: roads.indexOf(road), from: g.idx - span, to: g.idx + span, buildings: [], lamps: [], signs: [] }, B = town.buildings;
       for (const side of [-1, 1]) for (const row of [0, 1]) {
         let s = g.idx - span + rnd() * 5;
         while (s < g.idx + span - 4) {
@@ -602,9 +694,9 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
           const kind = row ? (r < 0.8 ? 'house' : 'shed') : near ? (r < 0.5 ? 'shop' : r < 0.75 ? 'tall' : 'house') : (r < 0.7 ? 'house' : 'shop');
           const w = kind === 'tall' ? 11 + rnd() * 5 : kind === 'shed' ? 7 + rnd() * 4 : 8 + rnd() * 6, d = kind === 'shed' ? 6 + rnd() * 2 : 7 + rnd() * 4;
           const h = kind === 'tall' ? 8.5 + rnd() * 3 : kind === 'shop' ? 3.8 + rnd() * 1.6 : kind === 'shed' ? 3.2 : (rnd() < 0.4 ? 5.8 : 3.1);
-          const si = wrap(s + w / 2 / ring.ds), f = frame(ring, si), lat = ring.hw + 14 + (row ? 22 : 0) + d / 2 + rnd() * 2.5;
+          const si = wrap(s + w / 2 / road.ds), f = frame(road, si), lat = road.hw + 14 + (row ? 22 : 0) + d / 2 + rnd() * 2.5;
           // keep the outside of a bend clear (run-off room): turn over 60 m of road, and which way it turns
-          const fa = frame(ring, wrap(si - 15)), fb = frame(ring, wrap(si + 15)), turn = Math.atan2(fa.tx * fb.tz - fa.tz * fb.tx, fa.tx * fb.tx + fa.tz * fb.tz);
+          const fa = frame(road, wrap(si - 15)), fb = frame(road, wrap(si + 15)), turn = Math.atan2(fa.tx * fb.tz - fa.tz * fb.tx, fa.tx * fb.tx + fa.tz * fb.tz);
           const outside = Math.abs(turn) > 60 / 320 && Math.sign(turn) === side;
           const x = f.x + f.lx * side * lat, z = f.z + f.lz * side * lat, yaw = Math.atan2(-f.lx * side, -f.lz * side);
           const cx = Math.cos(yaw), cz = Math.sin(yaw);   // the building's own x axis (along the road) is (cos yaw, -sin yaw)
@@ -612,21 +704,21 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
           for (const [a, b] of [[-0.5, -0.5], [0.5, -0.5], [-0.5, 0.5], [0.5, 0.5], [0, 0]]) {
             const px = x + cx * a * w + Math.sin(yaw) * b * d, pz = z - cz * a * w + Math.cos(yaw) * b * d, hh = gridAt(px, pz);
             lo = Math.min(lo, hh); hi = Math.max(hi, hh);
-            if (rdAt(px, pz) < ring.hw + 7 || (SEA !== null && hh < world.waterAt(px, pz) + 1.5)) ok = false;
+            if (rdAt(px, pz) < road.hw + 7 || (SEA !== null && hh < world.waterAt(px, pz) + 1.5)) ok = false;
           }
           if (ok && !outside && hi - lo < 4.5 && keep.every(([qx, qz, r]) => Math.hypot(qx - x, qz - z) > r + Math.max(w, d) / 2) && B.every((o) => Math.hypot(o.x - x, o.z - z) > (Math.max(o.w, o.d) + Math.max(w, d)) / 2 + 1)) {
             B.push({ x, z, yaw, w, d, h, kind, lo, hi, wall: rnd(), roof: rnd(), seed: rnd() });
           }
-          s += (w + 3 + rnd() * (row ? 12 : 7)) / ring.ds;
+          s += (w + 3 + rnd() * (row ? 12 : 7)) / road.ds;
         }
       }
       for (let s = g.idx - span + 6; s < g.idx + span; s += 14) for (const side of [-1, 1]) {
-        const f = frame(ring, wrap(s)), x = f.x + f.lx * side * (ring.hw + 4.5), z = f.z + f.lz * side * (ring.hw + 4.5);
-        if (rdAt(x, z) < ring.hw + 3 || keep.some(([qx, qz, r]) => Math.hypot(qx - x, qz - z) < 10)) continue;
+        const f = frame(road, wrap(s)), x = f.x + f.lx * side * (road.hw + 4.5), z = f.z + f.lz * side * (road.hw + 4.5);
+        if (rdAt(x, z) < road.hw + 3 || keep.some(([qx, qz, r]) => Math.hypot(qx - x, qz - z) < 10)) continue;
         town.lamps.push({ x, z, y: gridAt(x, z), yaw: Math.atan2(-f.lx * side, -f.lz * side) });
       }
       for (const [s, dir] of [[g.idx - span - 8, 1], [g.idx + span + 8, -1]]) {
-        const f = frame(ring, wrap(s)), side = -dir, x = f.x + f.lx * side * (ring.hw + 5), z = f.z + f.lz * side * (ring.hw + 5);
+        const f = frame(road, wrap(s)), side = -dir, x = f.x + f.lx * side * (road.hw + 5), z = f.z + f.lz * side * (road.hw + 5);
         town.signs.push({ x, z, y: gridAt(x, z), yaw: Math.atan2(-f.tx * dir, -f.tz * dir) });
       }
       for (const o of B) {          // solid: a row of round stops along each building's length

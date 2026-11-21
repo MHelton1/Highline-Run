@@ -1,7 +1,7 @@
 // Driver models lap the ring road: "hold" = bang-bang key holder (worst case), "tap" = key tapper, "stick" = analog.
 import {buildWorld} from '../src/terrain.js';
 import {Vehicle, RALLY_CAR} from '../src/vehicle.js';
-export const w=buildWorld(process.env.REGION, { towns: false });   // handling on the open road, without the town buildings
+export const w=buildWorld(process.env.REGION, { towns: false, outer: false });   // handling on the first map, without the town buildings or the outer roads
  const ring=w.roads[0]; const dt=1/120; const sp=w.spawn();
 const n=ring.n, kappa=new Float32Array(n);
 for(let i=0;i<n;i++){const a=(i-8+n)%n,b=(i+8)%n; const h1=Math.atan2(ring.x[i]-ring.x[a],ring.z[i]-ring.z[a]),h2=Math.atan2(ring.x[b]-ring.x[i],ring.z[b]-ring.z[i]); let d=h2-h1; d=Math.atan2(Math.sin(d),Math.cos(d)); kappa[i]=Math.abs(d)/(8*ring.ds);}

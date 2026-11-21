@@ -47,7 +47,7 @@ console.log('hot load spotted at 300 m, freight not');
 // the rival on every route: arrival as a share of the time limit
 const shares = []; let worstResets = 0;
 for (const a of w.places.sites) for (const b of w.places.sites) {
-  if (a === b || Math.hypot(a.x - b.x, a.z - b.z) < 700) continue;
+  if (a === b || Math.hypot(a.x - b.x, a.z - b.z) < 700 || a.outer || b.outer) continue;   // (no rival runs to the outer loop's pickups)
   const wild = a.wild || b.wild, dist = Math.hypot(a.x - b.x, a.z - b.z), limit = dist * 1.45 / (wild ? 16 : 21) + 20;
   const rv = new Rival(w, a, b, limit * RIVAL_DUE); let t = 0;
   while (rv.dist >= 9 && t < limit * 2) { rv.think(1 / 60); rv.car.step(dt, rv.input); rv.car.step(dt, rv.input); t += 1 / 60; }

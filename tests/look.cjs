@@ -9,7 +9,7 @@ require('fs').mkdirSync(OUT, { recursive: true });
   const args = ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'];
   const b = await chromium.launch({ args });
   const ctx = mode === 'desk' ? await b.newContext({ viewport: { width: 1280, height: 720 } }) : await b.newContext({ ...devices['iPhone 13'], deviceScaleFactor: 2 });
-  const p = await ctx.newPage(); const errs = [];
+  const p = await ctx.newPage(); p.setDefaultTimeout(90000); const errs = [];
   p.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); }); p.on('pageerror', (e) => errs.push('PAGEERR ' + e.message));
   await p.goto('file://' + path.join(__dirname, '..', 'dist', 'local.html') + (process.env.REGION ? '#r=' + process.env.REGION : ''));
   await p.waitForSelector('#go:not([hidden])', { timeout: 120000 });

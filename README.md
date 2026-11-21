@@ -109,6 +109,7 @@ Pictures for judging the look (not pass or fail):
     node tests/wheelsui.cjs [outdir]  # front-wheel dirt on 4x4s, tracks on dirt, drawing between physics steps
     node tests/riversui.cjs [outdir]  # coast rivers: driving over both bridges, the railings, a splash in a river, pictures
     REGION=coast node tests/townsui.cjs [outdir]  # towns: name on entry, solid buildings, pictures by day, night and map
+    REGION=coast node tests/outerui.cjs [outdir]  # bigger map: outer loop, spokes, third town, sizes and pictures
     node tests/garage8.cjs [outdir]  # garage with every car on an upright and a sideways phone (pictures)
     node tests/carshots.cjs [ids] [six|one|two|side|rear|top]  # the car models alone on a pad (bundles tests/viewer/entry.js)
 
@@ -172,6 +173,16 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   map show buildings and names. `buildWorld(region, { towns: false })` leaves them out: `laps.mjs` (so `cars.mjs`)
   uses that, because its keyboard robots wander far off the road at 100 mph. Tests: `tests/townsui.cjs`,
   `TEST=tests/x.mjs node tests/notowns.mjs` runs any node test without towns.
+- Bigger maps (build 32, Michael asked 2026-11-21 "make the maps bigger?", 1.5x wider chosen): `SIZE` 4608 m, `N`
+  1152 (4 m cells as before, so every old grid point lands on the same spot). The middle 3072 m keeps its roads, races,
+  garages and towns; mountain and desert heights there are unchanged with `{ outer: false }`. Each region's `outer`
+  adds a loop road at about 0.74 of the half width (`outer:true`), three spokes joining it to the inner roads
+  (`spoke:true`, one of them dirt), three pickup spots on it (`places.sites` after the camps; any job touching one
+  gets 1.25x time and rivals never go there) and a third town on it (`places.outerTown`). On the coast the loop runs
+  over a band of islands, crossing the sea on bridge decks held SEA+7 up. Trees: the first pass is the old one in the
+  old square (same draws), a second seeded pass fills the new ground. `buildTerrain` draws blocks with every point,
+  every second point past 650 m and every fourth past 1625 m (skirts hide the joins). Corner map is a 3300 m window
+  that follows the car. `laps.mjs` uses `{ towns: false, outer: false }`. Tests: `tests/outerui.cjs [outdir]`.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

@@ -22,6 +22,7 @@ import { mapPoints, pickPoint, arrived, pixelToWorld, mapView } from './nav.js';
 import { nextTip, skipped, TIP_SHOW, TIP_GAP } from './tips.js';
 import { createSkids } from './skids.js';
 import { dayKey, rollDaily, dailyEvent, dailyProgress, streakPay } from './daily.js';
+import { Duel, P_NAMES } from './duel.js';
 import { DriftMeter, slideAngle, driftPay, trapPay, placeTraps, crossed, MPH, TRAP_MIN_MPH, NitroTank, NITRO } from './stunts.js';
 import { REGIONS, REGION_IDS } from './regions.js';
 
@@ -352,7 +353,7 @@ function start(hot) {
   let camMode = 0, toastT = 0, showFps = false;
   const promptEl = $('prompt');
   const toast = (msg, t = 2.2) => { $('toast').textContent = msg; $('toast').classList.add('show'); toastT = t; };
-  const driving = () => (mode === 'roam' || mode === 'race') && !paused;
+  const driving = () => (mode === 'roam' || mode === 'race' || mode === 'duel') && !paused;
   const hush = () => { toastT = 0; $('toast').classList.remove('show'); };
   function setMenu() { const m = !driving(); input.menu = m; document.body.classList.toggle('menu', m && mode !== 'title'); if (m || mode !== 'roam') promptEl.hidden = true; }
   function titleInfo() {
@@ -430,6 +431,89 @@ function start(hot) {
   function endRace() {             // back to free driving from wherever the car is
     ui.close(); clearRace(); game.frozen = false; game.scatter(); for (const v of patrolVis) v.car.visible = true;
     mode = 'roam'; paused = false; armed = false; hush(); setMenu(); canvas.focus();
+  }
+
+  // ---- two players, one screen: a head-to-head race, the screen split in two (side by side when wide, else stacked) ----
+  let duel = null, car2 = null, vis2 = null, duelSet = null, duoDoneT = 0, duoHudT = 0;
+  const duoUp = [0, 0], cam2 = new THREE.PerspectiveCamera(62, 1, camera.near, camera.far), cam2Dir = new THREE.Vector3(0, 0, 1);
+  const duoEl = $('duo'), duoP = [0, 1].map((i) => ({ box: $('duo-p' + i), speed: $('duo-s' + i), lbl: $('duo-l' + i), place: $('duo-n' + i), arrow: $('duo-a' + i), time: $('duo-t' + i) }));
+  const wideSplit = () => canvas.clientWidth >= canvas.clientHeight;
+  function startDuel(def, p2id) {
+    if (game.job) { toast('Deliver or lose the cargo first', 2.4); return; }
+    ui.close(); clearRace(); dropDuel();
+    duelSet = { def, p2: p2id };
+    car2 = new Vehicle(world, specOf(p2id)); const p1c = paintOf(S().car), p2c = paintOf(p2id) === p1c ? (p1c === PAINTS[4].hex ? PAINTS[1].hex : PAINTS[4].hex) : paintOf(p2id);   // never two cars the same colour
+    vis2 = buildCar(car2.spec, { paint: p2c, number: 2 }); scene.add(vis2.car);
+    duel = new Duel(world, def, [car, car2]); game.frozen = true; input.duo = true;
+    for (const v of patrolVis) v.car.visible = false;
+    document.body.classList.add('duo'); duoEl.hidden = false; duoDoneT = 0; duoUp[0] = duoUp[1] = 0;
+    mode = 'duel'; paused = false; camSnap = true; cam2Dir.copy(car2.fwd).setY(0).normalize(); cam2.position.copy(car2.pos).addScaledVector(cam2Dir, -7).add(new THREE.Vector3(0, 2.7, 0));
+    hush(); setMenu(); canvas.focus();
+  }
+  function dropDuel() {
+    if (vis2) { scene.remove(vis2.car); vis2.dispose(); }
+    vis2 = null; car2 = null; duel = null; input.duo = false; for (const b of gateBeams) b.visible = false;
+    document.body.classList.remove('duo'); duoEl.hidden = true;
+    renderer.setScissorTest(false); const w = canvas.clientWidth, h = canvas.clientHeight; renderer.setViewport(0, 0, w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+  }
+  function endDuel() { ui.close(); dropDuel(); game.frozen = false; game.scatter(); for (const v of patrolVis) v.car.visible = true; mode = 'roam'; paused = false; armed = false; camSnap = true; hush(); setMenu(); canvas.focus(); }
+  function duelEvents() {
+    for (const e of duel.events.splice(0)) {
+      if (e.type === 'count') { ui.showCount(String(e.n)); audio.count(false); }
+      else if (e.type === 'go') { ui.showCount('GO', true); audio.count(true); }
+      else if (e.type === 'gate') audio.gate();
+      else if (e.type === 'home') { toast(`${P_NAMES[e.who]} finishes ${e.place === 1 ? 'first' : 'second'}! ${clock(e.time)}`, 2.6); audio.chime(e.place === 1 ? [523, 659, 784, 1047] : [523, 659]); }
+      else if (e.type === 'finish') duoDoneT = 2.2;
+    }
+  }
+  function duelStep(two) {        // one physics step for both cars
+    car.step(STEP, duel.input(0, two[0])); car2.step(STEP, duel.input(1, two[1])); duel.step(STEP);
+    skids.car(car, 'p', two[0].handbrake); skids.car(car2, 'q', two[1].handbrake);
+    for (let i = 0; i < 2; i++) if (duel.bump[i] > 3) { hit(duel.bump[i] + 4); duel.bump[i] = 0; }
+  }
+  function duelTick(dt) {          // once per frame: the countdown, events, getting stuck players going again
+    duel.update(dt); duelEvents();
+    [car, car2].forEach((c, i) => {
+      if (c.up.y < 0.35 && c.speed < 2) { duoUp[i] += dt; if (duoUp[i] > 1.5) { duoUp[i] = 0; c.place(c.pos.x, c.pos.z, Math.atan2(c.fwd.x, c.fwd.z), 1.0); } } else duoUp[i] = 0;
+      if (world.sea != null && c.pos.y < world.sea - 0.6) { duel.resetPlayer(i); audio.splash(); }
+    });
+    if (duoDoneT > 0 && (duoDoneT -= dt) <= 0) { mode = 'duelres'; ui.duelResults(duel.result, duelSet); setMenu(); }
+  }
+  function chase2(dt) {            // player 2's chase camera
+    const c = car2, v = new THREE.Vector3().copy(c.fwd).setY(0);
+    if (v.lengthSq() < 0.01) v.copy(cam2Dir); v.normalize();
+    if (c.vel.dot(c.fwd) > 6) { const l = new THREE.Vector3().copy(c.vel).setY(0).normalize(); v.lerp(l, 0.45).normalize(); }
+    const jump = cam2.position.distanceToSquared(c.pos) > 80 * 80;
+    cam2Dir.lerp(v, jump ? 1 : 1 - Math.exp(-dt * 3.2)).normalize();
+    const big = c.spec.box.z - 2, dist = 7.2 + big * 1.6 + c.speed * 0.035, t = new THREE.Vector3().copy(c.pos).addScaledVector(cam2Dir, -dist); t.y += 2.7 + big * 0.5;
+    cam2.position.lerp(t, jump ? 1 : 1 - Math.exp(-dt * 9));
+    const gh = world.sample(cam2.position.x, cam2.position.z) + 1.0; if (cam2.position.y < gh) cam2.position.y = gh;
+    cam2.lookAt(new THREE.Vector3().copy(c.pos).addScaledVector(cam2Dir, 5).add(new THREE.Vector3(0, 1, 0)));
+    cam2.fov += (62 + Math.min(18, c.speed * 0.28) - cam2.fov) * Math.min(1, dt * 3);
+  }
+  function renderDuo() {           // two pictures, one per player
+    const w = canvas.clientWidth, h = canvas.clientHeight, wide = wideSplit(), hw = wide ? Math.floor(w / 2) : w, hh = wide ? h : Math.floor(h / 2);
+    if (camera.view) camera.clearViewOffset();
+    renderer.setScissorTest(true);
+    const views = wide ? [[0, 0], [hw, 0]] : [[0, h - hh], [0, 0]];   // player 1 left or on top
+    [camera, cam2].forEach((cam, i) => {
+      const [x, y] = views[i]; cam.aspect = hw / hh; cam.updateProjectionMatrix();
+      renderer.setViewport(x, y, hw, hh); renderer.setScissor(x, y, hw, hh); renderer.render(scene, cam);
+    });
+    renderer.setScissorTest(false);
+    duoEl.classList.toggle('wide', wide);
+  }
+  function duoHud() {
+    if (!duel) return;
+    const pl = duel.places(), m = metric();
+    [car, car2].forEach((c, i) => {
+      const P = duoP[i], q = duel.players[i], g = duel.next(i);
+      P.speed.textContent = Math.round(c.speed * (m ? 3.6 : 2.23694)) + (m ? ' km/h' : ' mph');
+      P.lbl.textContent = duel.state === 'count' ? 'Get ready' : q.time != null ? 'Finished' : `Checkpoint ${q.gate + 1} of ${duel.gates.length}` + (duel.laps > 1 ? ` · lap ${q.lap + 1} of ${duel.laps}` : '');
+      P.place.textContent = PLACES[pl[i] - 1]; P.time.textContent = clock(q.time != null ? q.time : duel.clock);
+      P.arrow.style.visibility = g ? 'visible' : 'hidden';
+      if (g) { const dx = g.x - c.pos.x, dz = g.z - c.pos.z; P.arrow.style.transform = `rotate(${(-Math.atan2(dx * c.fwd.z - dz * c.fwd.x, dx * c.fwd.x + dz * c.fwd.z)).toFixed(2)}rad)`; }
+    });
   }
   function raceEvents() {
     for (const e of race.events.splice(0)) {
@@ -633,7 +717,9 @@ function start(hot) {
     raceDone: endRace, raceAgain: () => startRace(race.def),
     pickCup: () => { if (mode === 'offer') { lastRace.ring = 'cup'; ui.cupOffer(groupOf(races.find((d) => d.base === CUP_ROUNDS[0]))); } }, cupInfo, startCup, dropCup: () => { S().cup = null; store.commit(); },
     nextCupRound: () => { const c = myCup(); if (c) startRace(cupRound(races, world.region, c.round), c.lv); else endRace(); },
-    racing: () => mode === 'race', resume, restartRace: () => startRace(race.def), quitRace: endRace,
+    racing: () => mode === 'race' || mode === 'duel', resume, restartRace: () => (duel ? startDuel(duelSet.def, duelSet.p2) : startRace(race.def)), quitRace: () => (duel ? endDuel() : endRace()),
+    duelInfo: () => ({ events: races.map((d) => ({ id: d.id, name: d.name, short: d.short || d.name, laps: d.laps || 1 })), cars: Object.keys(S().cars), p1: S().car, touch: coarse, pads: input.pads || 0 }),
+    startDuel: (evId, carId) => startDuel(races.find((d) => d.id === evId), carId), endDuel, duelBack: () => (mode === 'duelres' ? endDuel() : resume()),
     options: () => ({ metric: metric(), muted: S().muted, music: S().music, tod: TOD_NAME[S().tod], weather: WEATHER_MODE_NAME[S().weather], goals: (() => { const a = allGoals(S()); return { done: a.filter((q) => S().done.includes(q.id)).length, all: a.length }; })(), fps: showFps, kid: S().kid, touch: coarse, tilt: S().tilt, canBuzz: canBuzz(), buzz: S().buzz }), toggleKid: () => setKid(!S().kid),
     toggleUnits: setUnits, toggleMute: setMute, toggleMusic: setMusic, nextWeather: () => { setWeather(WEATHER_MODES[(WEATHER_MODES.indexOf(S().weather) + 1) % WEATHER_MODES.length]); store.commit(); }, ghostTime, setGhost: (on) => { S().ghost = on; store.commit(); }, nextTime: () => { setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); }, toggleFps: () => { showFps = !showFps; if (!showFps) $('fps').textContent = ''; },
     findHints, findCars: () => FIND_IDS, showNitro,
@@ -647,6 +733,7 @@ function start(hot) {
   const useZone = () => { if (mode === 'roam' && !paused && zone && car.speed < 2.5) enter(zone); };
   promptEl.addEventListener('click', () => { useZone(); if (driving()) canvas.focus(); });
   $('menubtn').addEventListener('click', () => { pause(); });
+  $('duo-menu').addEventListener('click', () => { if (mode === 'duel') pause(); });
   // full screen, where the browser allows it from inside the viewer's frame (not on iPhone, which has no full screen for pages)
   { const de = document.documentElement, req = de.requestFullscreen || de.webkitRequestFullscreen, fb = $('fullbtn');
     const on = () => document.fullscreenElement || document.webkitFullscreenElement;
@@ -659,17 +746,20 @@ function start(hot) {
   input.on('action', useZone);
   input.on('reset', () => {
     if (!driving()) return;
+    if (mode === 'duel') { if (duel.state === 'run') duel.resetPlayer(0); return; }
     if (mode === 'race') { if (race.state === 'run') { race.resetPlayer(); camSnap = true; toast(race.track ? 'Back on the course' : 'Back to the last checkpoint'); } return; }
     const r = world.nearestRoad(car.pos.x, car.pos.z); car.place(r.x, r.z, r.yaw); camSnap = true; toast('Back on ' + r.road.name);
   });
-  input.on('flip', () => { if (!driving() || (race && race.state !== 'run')) return; car.place(car.pos.x, car.pos.z, Math.atan2(car.fwd.x, car.fwd.z), 1.0); toast('Flipped upright'); });
+  input.on('reset2', () => { if (mode === 'duel' && !paused && duel.state === 'run') duel.resetPlayer(1); });
+  input.on('duoReset', (i) => { if (mode === 'duel' && !paused && duel.state === 'run') duel.resetPlayer(i); });
+  input.on('flip', () => { if (!driving() || mode === 'duel' || (race && race.state !== 'run')) return; car.place(car.pos.x, car.pos.z, Math.atan2(car.fwd.x, car.fwd.z), 1.0); toast('Flipped upright'); });
   input.on('camera', () => { if (!driving()) return; camMode = (camMode + 1) % 3; toast(['Chase camera', 'Far camera', 'Hood camera'][camMode], 1.2); });
   input.on('mute', () => { if (!driving()) return; setMute(); toast(S().muted ? 'Sound off' : 'Sound on', 1.2); });
   input.on('time', () => { if (!driving()) return; setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); toast('Time of day: ' + TOD_NAME[S().tod], 1.4); });
   input.on('music', () => { if (!driving()) return; setMusic(); toast(S().music ? 'Music on' : 'Music off', 1.2); });
   input.on('units', () => { if (driving()) setUnits(); });
-  input.on('map', () => { if (MAP.on) closeMap(); else if (driving()) openMap(); });
-  input.on('photo', () => { if (driving()) { pause(); openPhoto(); } else if (PH.on) closePhoto(); });
+  input.on('map', () => { if (MAP.on) closeMap(); else if (driving() && mode !== 'duel') openMap(); });
+  input.on('photo', () => { if (driving() && mode !== 'duel') { pause(); openPhoto(); } else if (PH.on) closePhoto(); });
   input.on('pause', () => { if (MAP.on) { closeMap(); return; } if (PH.on) { if (!$('shot').hidden) $('shot').hidden = true; else closePhoto(); return; } if (paused) resume(); else if (driving()) pause(); else if (mode !== 'title') ui.back(); });
   input.on('back', () => { if (MAP.on) { closeMap(); return; } if (PH.on) { closePhoto(); return; } if (paused) resume(); else ui.back(); });
   input.on('accept', () => { if (mode === 'title') begin(); else ui.accept(); });
@@ -773,8 +863,10 @@ function start(hot) {
     if (paused || mode === 'title' || mode === 'offer') return;
     if (S().kid && (mode === 'roam' || mode === 'race')) inp = kidInput(car, inp, kidOut);
     acc += dt; thumpT -= dt; if (mode !== 'roam') nitro.on = false;
+    const two = mode === 'duel' || mode === 'duelres' ? input.poll2() : null;
     while (acc >= STEP) {
       acc -= STEP;
+      if (two) { duelStep(two); continue; }
       if (mode === 'roam') { const nos = nitro.step(STEP, inp.nitro, nitroOk(), car.speed); car.step(STEP, nos ? { ...inp, boost: NITRO.acc } : inp); skids.car(car, 'p', inp.handbrake); game.step(STEP); if (game.rammed > 3) { hit(game.rammed + 4); game.rammed = 0; } }
       else if (mode === 'garage') car.step(STEP, HOLD);
       else { car.step(STEP, race.input(inp)); skids.car(car, 'p', inp.handbrake); race.step(STEP); if (rec && race.state === 'run') rec.sample(race.clock, car.pos, car.quat); if (race.bump > 3) { hit(race.bump + 4); race.bump = 0; } }
@@ -783,13 +875,14 @@ function start(hot) {
     if (mode === 'roam') { game.update(dt); jobEvents(); if (mode === 'roam') zoneCheck(dt);
       stunts(dt);
       if (nav && arrived(nav, car.pos.x, car.pos.z)) { toast(nav.kind === 'pin' ? 'You reached your marker' : 'You reached ' + nav.name, 2.4); nav = null; audio.click(); } }
+    else if (mode === 'duel' || mode === 'duelres') duelTick(dt);
     else if (mode === 'race' || mode === 'results') {
       race.update(dt); raceEvents();
       if (mode === 'race' && race.state === 'done' && (resultsT -= dt) <= 0) { mode = 'results'; ui.results(race, raceNote); setMenu(); }
       if (mode === 'results') { const n = race.rivals.filter((r) => r.time != null).length; if (n !== doneN) { doneN = n; ui.standings(race); } }
       if (mode === 'race' && race.state === 'run' && race.track) { offT = race.track.far > 45 ? offT + dt : 0; if (offT > 1.5) { toast(coarse ? 'Off the course. Tap ROAD to go back' : 'Off the course. Press R to go back', 1.2); offT = 0; } }
     }
-    if (driving()) {
+    if (driving() && mode !== 'duel') {
       if (world.sea != null && car.pos.y < world.sea - 0.6) {   // into the sea: a splash, then back on the road (or the course)
         seaT += dt; if (seaT > 0.8) { seaT = 0; input.fire('reset'); audio.splash(); toast('Splash! Keep out of the water', 2.2); if (mode === 'roam' && game.job) game.damage(30); }
       } else seaT = 0;
@@ -860,20 +953,25 @@ function start(hot) {
     const live = driving(), racing = mode === 'race' || mode === 'results';
 
     // cars
-    pose(car, vis, dt); vis.cargo.visible = !!game.job;
+    pose(car, vis, dt); vis.cargo.visible = !!game.job; const duo = !!duel; if (duo) pose(car2, vis2, dt);
     const flash = Math.floor(now / 160) % 2;
-    if (!racing) patrolVis.forEach((v, i) => { v.car.visible = i < game.patrols.length; });
-    if (!racing) game.patrols.forEach((pt, i) => { if (!patrolVis[i]) return; pose(pt.car, patrolVis[i], dt); const on = pt.mode === 'chase' || pt.mode === 'block'; patrolVis[i].bar[0].color.setHex(on && flash ? 0xff2a1a : 0x551111); patrolVis[i].bar[1].color.setHex(on && !flash ? 0x2a55ff : 0x111155); });
-    else race.rivals.forEach((r, i) => pose(r.car, rivalVis[i], dt));
+    if (!racing && !duo) patrolVis.forEach((v, i) => { v.car.visible = i < game.patrols.length; });
+    if (!racing && !duo) game.patrols.forEach((pt, i) => { if (!patrolVis[i]) return; pose(pt.car, patrolVis[i], dt); const on = pt.mode === 'chase' || pt.mode === 'block'; patrolVis[i].bar[0].color.setHex(on && flash ? 0xff2a1a : 0x551111); patrolVis[i].bar[1].color.setHex(on && !flash ? 0x2a55ff : 0x111155); });
+    else if (racing) race.rivals.forEach((r, i) => pose(r.car, rivalVis[i], dt));
     if (ghostVis && race) {          // the ghost follows its recording by the race clock, and fades out after its finish
       const live = ghostAt(ghost, race.state === 'count' ? 0 : race.clock, gP, gQ);
       ghostVis.car.position.copy(gP); ghostVis.car.quaternion.copy(gQ);
       const near = Math.min(1, gP.distanceTo(camera.position) / 9), op = (live ? 0.3 : Math.max(0, 0.3 - (race.clock - ghost.time) * 0.15)) * near;
       for (const m of ghostVis.mats) m.opacity = op; ghostVis.car.visible = op > 0.01;
     }
-    smugVis.car.visible = !racing && !!game.rival; if (smugVis.car.visible) pose(game.rival.car, smugVis, dt);
+    smugVis.car.visible = !racing && !duo && !!game.rival; if (smugVis.car.visible) pose(game.rival.car, smugVis, dt);
     // checkpoint lights
-    const pulse = 0.45 + 0.15 * Math.sin(now / 300), free = !racing && !game.job;
+    const pulse = 0.45 + 0.15 * Math.sin(now / 300), free = !racing && !duo && !game.job;
+    if (duo) [0, 1].forEach((i) => {   // each player's next checkpoint: player 1 cyan, player 2 orange
+      const gt = duel.next(i), b = gateBeams[i]; b.visible = !!gt; if (!gt) return;
+      b.position.set(gt.x, gt.y, gt.z); b.scale.set(gt.r / 10, 1, gt.r / 10); const c = i ? 0xff9a3c : 0x62dcea;
+      b.userData.beam.material.color.setHex(c); b.userData.ring.material.color.setHex(c); b.userData.beam.material.opacity = pulse + 0.1;
+    });
     if (racing) [race.next, race.after].forEach((gt, i) => {
       const b = gateBeams[i]; b.visible = !!gt; if (!gt) return;
       const lastGate = gt === race.gates[race.gates.length - 1] && race.lap + 1 >= (race.def.laps || 1) && (i === 0 || race.gate + 1 === race.gates.length - 1);
@@ -881,7 +979,7 @@ function start(hot) {
       const c = lastGate ? 0xf3efe4 : 0x62dcea; b.userData.beam.material.color.setHex(c); b.userData.ring.material.color.setHex(c); b.userData.beam.material.opacity = i ? 0.2 : pulse + 0.1;
     });
     // dust
-    if (live) { trail(car, dt, 40); if (mode === 'race') for (const r of race.rivals) trail(r.car, dt, 16); }
+    if (live) { trail(car, dt, 40); if (mode === 'race') for (const r of race.rivals) trail(r.car, dt, 16); if (duo) trail(car2, dt, 40); }
     for (const d of dust) { if (!d.visible) continue; const u = d.userData; if (!paused) u.life -= dt; if (u.life <= 0) { d.visible = false; continue; } const t = 1 - u.life / u.max; if (!paused) { u.vy -= (u.g || 0) * dt; d.position.x += (u.vx || 0) * dt; d.position.y += u.vy * dt; d.position.z += (u.vz || 0) * dt;
       if (u.kind === 'mud' && u.vy < 0) { const gy = world.sample(d.position.x, d.position.z) + 0.12; if (d.position.y < gy) { d.position.y = gy; u.vx = u.vz = u.vy = 0; u.g = 0; } } }   /* mud lands and stays on the ground */ const sc = (0.8 + t * (u.grow ?? 4.5)) * u.size; d.scale.set(sc, sc, 1); d.material.opacity = (u.alpha ?? 0.42) * (u.kind === 'mud' ? 1 - t * t : 1 - t) * Math.min(1, t * (u.kind === 'mud' ? 30 : 8)); }
 
@@ -911,7 +1009,7 @@ function start(hot) {
     fall.update(WX.cur.part, WX.cur.partAmt, camera.position, now / 1000, Math.min(1, L.si / 2.4 + 0.15));
     skids.flush();
     { const on = nitro.on && mode === 'roam' && !paused; for (const f of flames) { f.visible = on; if (on) { const k = 0.75 + Math.random() * 0.55; f.scale.set(1, 1, k); } } }
-    renderer.render(scene, camera);
+    if (duo) { chase2(dt); renderDuo(); } else renderer.render(scene, camera);
 
     audio.update({ nitro: nitro.on, rpm: car.rpm, throttle: live ? (race ? race.input(inp) : inp).throttle : 0, speed: car.speed, slip: car.slip, loose: car.surf !== SURF.ASPHALT ? 1 : 0, grounded: car.grounded, gear: car.gear,
       live: live || mode === 'results', heat: !racing && game.heat, nearest: game.nearest, now,
@@ -920,6 +1018,7 @@ function start(hot) {
     // HUD (15 Hz)
     hudT -= dt; if (toastT > 0 && (toastT -= dt) <= 0) $('toast').classList.remove('show');
     if (mode === 'roam' && driving()) tipTick(dt);
+    if (duel && (duoHudT -= dt) <= 0) { duoHudT = 1 / 15; duoHud(); }
     if (hudT > 0 || mode === 'title') return;
     hudT = 1 / 15;
     const s = car.spec, m = metric();
@@ -972,7 +1071,7 @@ function start(hot) {
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
-  window.__game = { get dustKinds() { const k = {}; for (const d of dust) if (d.visible) k[d.userData.kind] = (k[d.userData.kind] || 0) + 1; return k; }, daily, dailyInfo, skids, get flames() { return flames.map((f) => f.visible); }, tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
+  window.__game = { startDuel, endDuel, get duel() { return duel; }, get car2() { return car2; }, duoHud, get dustKinds() { const k = {}; for (const d of dust) if (d.visible) k[d.userData.kind] = (k[d.userData.kind] || 0) + 1; return k; }, daily, dailyInfo, skids, get flames() { return flames.map((f) => f.visible); }, tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },
     get drawn() { const r = renderer.info.render; return { quality, locked, shadows: sun.castShadow, triangles: r.triangles, calls: r.calls, small: smallMeshes.reduce((n, m) => n + m.count, 0), smallShown: smallMeshes.reduce((n, m) => n + (m.visible ? m.count : 0), 0) }; },
     get ghost() { return ghost && { time: ghost.time, n: ghost.n, splits: ghost.splits.length, shown: !!ghostVis && ghostVis.car.visible, pos: ghostVis ? ghostVis.car.position.toArray().map(Math.round) : null }; },

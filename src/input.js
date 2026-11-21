@@ -5,7 +5,7 @@ export function createInput(touchRoot, canvas) {
   const held = new Set(), listeners = {};
   let menu = false, navDir = '', navT = 0;
   const fire = (name, a, b) => { if (listeners[name]) listeners[name](a, b); };
-  const actions = { KeyR: 'reset', KeyF: 'flip', KeyC: 'camera', KeyM: 'mute', KeyN: 'music', KeyT: 'time', KeyU: 'units', KeyO: 'photo', KeyG: 'map', KeyE: 'action', Enter: 'action', Escape: 'pause', KeyP: 'pause' };
+  const actions = { KeyR: 'reset', KeyF: 'flip', KeyC: 'camera', KeyM: 'mute', KeyN: 'music', KeyT: 'time', KeyU: 'units', KeyO: 'photo', KeyG: 'map', KeyE: 'action', Enter: 'action', Backspace: 'reset2', Escape: 'pause', KeyP: 'pause' };
   const NAV = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
   addEventListener('keydown', (e) => {
     if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -151,7 +151,7 @@ export function createInput(touchRoot, canvas) {
     let gp = null;
     try { for (const p of navigator.getGamepads ? navigator.getGamepads() : []) if (p && p.connected) { gp = p; break; } } catch (_) {}
     state.pad = !!gp;
-    if (gp) {
+    if (gp && !(state.duo && !menu)) {   // in a two-player race the pads are read by poll2 instead
       const b = (i) => gp.buttons[i] ? gp.buttons[i].value : 0, map = menu ? MENU : DRIVE;
       for (let i = 0; i < 16; i++) {       // act on a fresh press only, so a button held while a menu opens does nothing there
         if (b(i) <= 0.5) { held.delete(i); continue; }
@@ -175,6 +175,33 @@ export function createInput(touchRoot, canvas) {
     if (menu) { steer = thr = brk = 0; hb = nos = false; }
     state.steer = steer; state.throttle = thr; state.brake = brk; state.handbrake = hb; state.nitro = nos; state.analog = analog;
     return state;
+  };
+  // Two players on one screen: player 1 on W A S D (Space handbrake), player 2 on the arrows (right Shift, right Ctrl or
+  // / for the handbrake). Controllers: with two, one each; with one, it is player 2's and player 1 keeps the keyboard.
+  // Y on a controller puts that player back on the course, Start opens the menu.
+  const held2 = [new Set(), new Set()];
+  state.duo = false;
+  state.poll2 = () => {
+    const k = (c) => keys.has(c) ? 1 : 0;
+    const out = [
+      { steer: k('KeyA') - k('KeyD'), throttle: k('KeyW'), brake: k('KeyS'), handbrake: !!k('Space'), analog: false },
+      { steer: k('ArrowLeft') - k('ArrowRight'), throttle: k('ArrowUp'), brake: k('ArrowDown'), handbrake: !!(k('ShiftRight') || k('ControlRight') || k('Slash') || k('Numpad0')), analog: false },
+    ];
+    let pads = [];
+    try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter((p) => p && p.connected); } catch (_) {}
+    const slot = pads.length >= 2 ? [pads[0], pads[1]] : [null, pads[0] || null];
+    slot.forEach((gp, i) => {
+      if (!gp) return;
+      const b = (n) => gp.buttons[n] ? gp.buttons[n].value : 0, o = out[i];
+      for (const n of [3, 9]) { if (b(n) <= 0.5) { held2[i].delete(n); continue; } if (held2[i].has(n)) continue; held2[i].add(n); if (!menu) fire(n === 3 ? 'duoReset' : 'pause', i); }
+      const sx = dz(gp.axes[0] || 0);
+      if (sx) { o.steer = -Math.sign(sx) * Math.pow(Math.abs(sx), 1.6); o.analog = true; }
+      if (b(14) > 0.5) o.steer = 1; if (b(15) > 0.5) o.steer = -1;
+      o.throttle = Math.max(o.throttle, b(7)); o.brake = Math.max(o.brake, b(6)); if (b(0) > 0.5 || b(5) > 0.5) o.handbrake = true;
+    });
+    state.pads = pads.length;
+    if (menu) for (const o of out) { o.steer = o.throttle = o.brake = 0; o.handbrake = false; }
+    return out;
   };
   return state;
 }

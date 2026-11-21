@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 26
+# Highline Run: browser prototype, build 27
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -15,7 +15,8 @@ No rendering (run in plain node, so the tests can drive them):
 
 - `src/nav.js` the big map's marker: which place a tap means (`pickPoint`), arrival, the map's view box
 - `src/stunts.js` free-roam scoring: `DriftMeter` (drift chains, multiplier, pay), speed trap spots (`placeTraps`) and crossing
-- `src/tips.js` tips for new players: each tip's trigger and skip test, `nextTip` (one at a time, 25 s apart, once each)
+- `src/tips.js` tips for new players: each tip's trigger and skip test, `nextTip` (one at a time, at most one a minute, once each)
+- `src/duel.js` two players on one screen: `Duel` (side-by-side grid, each player's checkpoints and laps, finish order, 25 s grace after the first finisher, per-player reset)
 - `src/daily.js` the daily challenge: today's task per date and region (`dailyFor`), progress, streak pay, save cleaning
 - `src/terrain.js` world data: heightfield, roads, surface grip table, ground queries, places (cargo sites, garages, race lines)
 - `src/vehicle.js` rigid-body car physics on the heightfield (120 Hz fixed step, gravity 13.2)
@@ -227,6 +228,12 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   mud (`mud()`, hard-edged `mudTex`, thrown up and back, land and stay on the ground) off loose surfaces, and a light
   mist (`spray()`) off wet tarmac at speed. Snow (`WX.cur.ground`): white powder, grey slush on tarmac. Dry: dust as
   before. Tips: `TIP_GAP` 60 s (at most one a minute), `TIP_SHOW` 20 s, and never while a message is showing.
+- Two players (build 27, Michael asked 2026-11-21): menu "Two players" opens the setup card (event and player 2's car;
+  player 1 drives their current car). Mode `duel` then `duelres`; `input.poll2()` reads both players (P1 WASD + Space,
+  P2 arrows + right Shift; two pads one each, one pad goes to P2; Backspace or pad Y resets). The screen is split with
+  scissor viewports (side by side when wider than tall, else stacked), each half with its own chase camera (`cam2`) and
+  panel (`#duo`); patrols, smuggler, tips and the touch controls are hidden. No prize money, no saves touched. Tests:
+  `tests/duel.mjs [region]` and `tests/duelui.cjs [desk|port]`.
 - Cargo rivals steer round a pickup's hut when their way in runs through it (the coast's huts sat on the line in).
 - Kid mode (`src/kid.js`, saved as `kid`): `kidInput()` replaces the pedals so the car drives itself at `KID` speeds
   (22 m/s tarmac, 16 dirt, 12 off road, less in turns); a held brake still stops and reverses. Cargo time x1.4, bust

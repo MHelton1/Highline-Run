@@ -239,6 +239,7 @@ export function createUI(g) {
         racing && el('button', { id: 'dlg-restart', type: 'button', class: 'btn', onclick: () => g.restartRace() }, 'Restart race'),
         racing && el('button', { id: 'dlg-quit', type: 'button', class: 'btn', onclick: () => g.quitRace() }, 'Leave race'),
         el('button', { id: 'dlg-map', type: 'button', class: 'btn', onclick: () => g.map() }, 'Map'),
+        !racing && el('button', { id: 'dlg-duo', type: 'button', class: 'btn', onclick: () => duelSetup() }, 'Two players'),
         el('button', { id: 'dlg-tips', type: 'button', class: 'btn', 'aria-pressed': String(!!g.tipsOn()), onclick: () => { g.toggleTips(); pause(); focusOn($('dlg-tips')); } }, 'Tips ' + (g.tipsOn() ? 'on' : 'off')),
         el('button', { id: 'dlg-photo', type: 'button', class: 'btn', onclick: () => g.photo() }, 'Photo mode'),
         el('button', { id: 'dlg-goals', type: 'button', class: 'btn', onclick: () => goals() }, `Goals ${opt.goals.done}/${opt.goals.all}`),
@@ -285,10 +286,45 @@ export function createUI(g) {
 
   // ---------- big countdown numbers ----------
   const count = $('count');
+  // two players: pick the event and player 2's car, then race head to head on a split screen
+  let duoPick = null;
+  function duelSetup(sel) {
+    const info = g.duelInfo(); duoPick = duoPick || { ev: info.events[0].id, car: info.cars.includes('hatch') ? 'hatch' : info.cars[0] };
+    if (sel) Object.assign(duoPick, sel);
+    if (!info.events.some((e) => e.id === duoPick.ev)) duoPick.ev = info.events[0].id;
+    if (!info.cars.includes(duoPick.car)) duoPick.car = info.cars[0];
+    const ev = info.events.find((e) => e.id === duoPick.ev), ci = info.cars.indexOf(duoPick.car);
+    card('duel', [
+      el('span', { class: 'lbl' }, 'Same screen'), el('h2', { id: 'dlg-title' }, 'Two players'),
+      el('p', { class: 'note' }, info.touch && !info.pads ? 'Two players need a keyboard or game controllers (a computer, a TV browser, or a tablet with controllers).' : 'Player 1: W A S D, Space to slide. Player 2: arrow keys, right Shift to slide. With controllers: two, one each; one, it goes to player 2.'),
+      seg('Event', info.events.map((e) => ({ id: 'dlg-duo-' + e.id, text: e.short || e.name, on: e.id === duoPick.ev, pick: () => duelSetup({ ev: e.id }) }))),
+      el('p', { class: 'note' }, ev.name + (ev.laps > 1 ? ` · ${ev.laps} laps` : '')),
+      el('div', { class: 'pick' }, el('span', { class: 'lbl' }, 'Player 2 drives'), el('div', { class: 'seg' },
+        el('button', { id: 'dlg-duo-prev', type: 'button', 'aria-label': 'Previous car', onclick: () => { g.audio.click(); duelSetup({ car: info.cars[(ci - 1 + info.cars.length) % info.cars.length] }); focusOn($('dlg-duo-prev')); } }, '◀'),
+        el('button', { id: 'dlg-duo-car', type: 'button', 'aria-pressed': 'true' }, CARS[duoPick.car].base.name),
+        el('button', { id: 'dlg-duo-next', type: 'button', 'aria-label': 'Next car', onclick: () => { g.audio.click(); duelSetup({ car: info.cars[(ci + 1) % info.cars.length] }); focusOn($('dlg-duo-next')); } }, '▶'))),
+      el('p', { class: 'note' }, `Player 1 drives the ${CARS[info.p1].base.name}. No prize money; just bragging rights.`),
+      el('div', { class: 'actions' },
+        el('button', { id: 'dlg-duo-go', type: 'button', class: 'btn primary', onclick: () => g.startDuel(duoPick.ev, duoPick.car) }, 'Start the race'),
+        el('button', { id: 'dlg-duo-back', type: 'button', class: 'btn', onclick: () => g.duelBack() }, 'Back')),
+    ], () => g.duelBack());
+  }
+  function duelResults(res, set) {
+    const t = res.times, name = ['Player 1', 'Player 2'];
+    card('duelres', [
+      el('span', { class: 'lbl' }, 'Two players'), el('h2', { id: 'dlg-title' }, `${name[res.winner]} wins!`),
+      el('dl', { class: 'rows', id: 'dlg-duo-table' }, [res.winner, 1 - res.winner].map((w, k) => [el('dt', { class: 'n' }, k ? '2nd' : '1st'), el('dd', null, name[w]), el('dd', { class: 't' }, t[w] != null ? clock(t[w]) : 'Did not finish')])),
+      res.gap != null ? el('p', { class: 'note' }, `Won by ${res.gap.toFixed(2)} s.`) : null,
+      el('div', { class: 'actions' },
+        el('button', { id: 'dlg-duo-again', type: 'button', class: 'btn primary', onclick: () => g.startDuel(set.def.id, set.p2) }, 'Race again'),
+        el('button', { id: 'dlg-duo-other', type: 'button', class: 'btn', onclick: () => duelSetup() }, 'Other race'),
+        el('button', { id: 'dlg-duo-done', type: 'button', class: 'btn', onclick: () => g.endDuel() }, 'Back to driving')),
+    ], () => g.endDuel());
+  }
   function showCount(text, go) { count.textContent = text; count.classList.toggle('go', !!go); count.classList.remove('show'); void count.offsetWidth; count.classList.add('show'); }
 
   return {
-    offer, cupOffer, results, standings, pause, goals, showCount,
+    offer, cupOffer, results, standings, pause, goals, showCount, duelSetup, duelResults,
     openGarage(p) { place = p; tab = 'cars'; sel = S().car; $('g-place').textContent = p.name; garage.hidden = false; draw(); body.scrollTop = 0; focusOn($('g-leave')); },
     closeGarage() { garage.hidden = true; clearTimeout(statT); },
     close() { modal.hidden = true; kind = null; onBack = null; },

@@ -299,6 +299,19 @@ body.bigmap .hud { visibility: hidden; }
 #shot > .card { max-width: min(900px, 100%); max-height: 100%; overflow: auto; padding: 12px; box-sizing: border-box; }
 #shot img { display: block; width: 100%; height: auto; border-radius: 6px; -webkit-touch-callout: default; user-select: auto; }
 #shot .actions { margin-top: 10px; } #shot a.btn { text-decoration: none; text-align: center; }
+#duo { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+#duo[hidden] { display: none; }
+#duo::after { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 3px; margin-top: -1.5px; background: var(--ink, #0e1114); }
+#duo.wide::after { left: 50%; right: auto; top: 0; bottom: 0; width: 3px; height: auto; margin: 0 0 0 -1.5px; }
+.duo-p { position: absolute; left: 10px; display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-left: 4px solid var(--c); }
+#duo-p0 { --c: #62dcea; top: calc(10px + env(safe-area-inset-top, 0px)); } #duo-p1 { --c: #ff9a3c; top: calc(50% + 10px); }
+#duo.wide #duo-p1 { top: calc(10px + env(safe-area-inset-top, 0px)); left: calc(50% + 10px); }
+.duo-p .duo-a { font-size: 22px; color: var(--c); line-height: 1; } .duo-p .lbl { display: block; } .duo-p .who { color: var(--c); }
+.duo-p .duo-t { font: 600 18px var(--display); letter-spacing: .04em; } .duo-p .duo-n { font: 700 26px var(--display); min-width: 2.2em; text-align: center; }
+.duo-p .duo-s { font: 600 15px var(--display); opacity: .85; min-width: 4.5em; text-align: right; }
+#duo-menu { position: absolute; right: 10px; top: calc(10px + env(safe-area-inset-top, 0px)); pointer-events: auto; width: 40px; height: 40px; font-size: 20px; color: var(--paper); cursor: pointer; }
+body.duo .hud > :not(#toast) { visibility: hidden; } body.duo #touch, body.duo #tip, body.duo #drift { display: none; } body.menu #duo { visibility: hidden; }
+@media (max-height: 520px) { .duo-p { padding: 4px 8px; gap: 7px; } .duo-p .duo-n { font-size: 20px; } .duo-p .duo-t { font-size: 15px; } .duo-p .duo-s { display: none; } }
 @media (prefers-reduced-motion: reduce) { .hud, #toast, .stats .bar i { transition: none; } #count.show { animation-timing-function: step-end; } }
 </style>
 <div id="wrap">
@@ -328,6 +341,7 @@ body.bigmap .hud { visibility: hidden; }
       <div id="nos" aria-hidden="true"><div id="nosfill"></div></div>
     </div>
   </div>
+  <div id="duo" hidden><div id="duo-p0" class="duo-p card"><span id="duo-a0" class="duo-a">▲</span><div><span class="lbl"><b class="who">Player 1</b> · <span id="duo-l0">Get ready</span></span><span id="duo-t0" class="duo-t">0:00.0</span></div><span id="duo-n0" class="duo-n">1st</span><span id="duo-s0" class="duo-s">0 mph</span></div><div id="duo-p1" class="duo-p card"><span id="duo-a1" class="duo-a">▲</span><div><span class="lbl"><b class="who">Player 2</b> · <span id="duo-l1">Get ready</span></span><span id="duo-t1" class="duo-t">0:00.0</span></div><span id="duo-n1" class="duo-n">1st</span><span id="duo-s1" class="duo-s">0 mph</span></div><button id="duo-menu" class="card" type="button" aria-label="Open the menu">☰</button></div>
   <div id="count" aria-hidden="true"></div>
   <div id="drift" hidden aria-hidden="true"></div>
   <div id="tip" class="card" role="button" aria-live="polite" hidden><span class="lbl">Tip · tap to close</span><span id="tip-text"></span></div>
@@ -368,7 +382,7 @@ body.bigmap .hud { visibility: hidden; }
   <div id="start">
     <div class="inner">
       <h1>Highline <em>Run</em></h1>
-      <p>Build 26. New: in rain the wheels throw mud off dirt and spray off wet roads; in snow, white powder. Tips come at most once a minute. Build 25 added a daily challenge (see the menu), tyre marks and nitro flames. Recent: tips for new players, a nitro kit at the garages, drift scoring and speed traps, and a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
+      <p>Build 27. New: two players on one screen (menu, Two players) with a keyboard or two controllers. Build 26: in rain the wheels throw mud off dirt and spray off wet roads; in snow, white powder. Tips come at most once a minute. Build 25 added a daily challenge (see the menu), tyre marks and nitro flames. Recent: tips for new players, a nitro kit at the garages, drift scoring and speed traps, and a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
       <dl class="keys card desk">
         <dt>W A S D / arrows</dt><dd>Gas, steer, brake. Hold brake at a stop to reverse.</dd>
         <dt>Space · Shift</dt><dd>Handbrake for slides · nitro (once you buy the kit at a garage)</dd>

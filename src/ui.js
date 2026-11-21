@@ -5,6 +5,7 @@ import { CARS, CAR_IDS, FIND_IDS, PRIZE_IDS, PAINTS, UPGRADES, TUNING, upgradeCo
 import { MEDALS, PLACES, LEVELS, KID_LEVEL, rankKey, prizes, medals } from './race.js';
 import { regionGoals, garageGoals, isDone, paintLocked, regionComplete, REGION_PAINT } from './goals.js';
 import { CUP_ROUNDS, POINTS, TROPHY, purse, cupTable } from './cup.js';
+import { ACTIONS, P2_ACTIONS, PAD_ACTIONS, STYLES, STYLE_NAME, actionName, keyName, buttonName, menuButtons } from './binds.js';
 
 const $ = (id) => document.getElementById(id);
 // el('button', { class: 'btn', onclick: fn }, 'Text', child...)
@@ -112,7 +113,7 @@ export function createUI(g) {
       out.push(el('div', { class: 'uprow' },
         el('span', { class: 'up-name' }, 'Nitro kit'),
         el('button', { id: 'g-nitro', type: 'button', class: 'btn', disabled: nos || s.cash < NITRO.price, onclick: () => { const t = S(); if (t.nitro || t.cash < NITRO.price) return g.audio.deny(); t.cash -= NITRO.price; t.nitro = true; g.store.commit(); g.audio.buy(); g.showNitro(); draw(); } }, nos ? 'Fitted to every car' : `Buy · ${money(NITRO.price)}`),
-        el('p', { class: 'up-what' }, 'Fits every car you own. Hold NOS (Shift, or LB on a controller) for a hard push. Drifts, jumps and steady driving refill it. Free driving only, not in races.')));
+        el('p', { class: 'up-what' }, `Fits every car you own. Hold NOS (${g.keyLabel('nitro')}, or ${g.padLabel('nitro')} on a controller) for a hard push. Drifts, jumps and steady driving refill it. Free driving only, not in races.`)));
     } else {
       for (const t of TUNING) {
         const v = own.tune[t.key], id = 'g-tune-' + t.key;
@@ -240,6 +241,7 @@ export function createUI(g) {
         racing && el('button', { id: 'dlg-quit', type: 'button', class: 'btn', onclick: () => g.quitRace() }, 'Leave race'),
         el('button', { id: 'dlg-map', type: 'button', class: 'btn', onclick: () => g.map() }, 'Map'),
         !racing && el('button', { id: 'dlg-duo', type: 'button', class: 'btn', onclick: () => duelSetup() }, 'Two players'),
+        el('button', { id: 'dlg-controls', type: 'button', class: 'btn', onclick: () => controls() }, 'Controls'),
         el('button', { id: 'dlg-tips', type: 'button', class: 'btn', 'aria-pressed': String(!!g.tipsOn()), onclick: () => { g.toggleTips(); pause(); focusOn($('dlg-tips')); } }, 'Tips ' + (g.tipsOn() ? 'on' : 'off')),
         el('button', { id: 'dlg-photo', type: 'button', class: 'btn', onclick: () => g.photo() }, 'Photo mode'),
         el('button', { id: 'dlg-goals', type: 'button', class: 'btn', onclick: () => goals() }, `Goals ${opt.goals.done}/${opt.goals.all}`),
@@ -256,11 +258,11 @@ export function createUI(g) {
         el('button', { id: 'dlg-wipe', type: 'button', class: 'btn danger', onclick: () => { if (!armed) { armed = true; $('dlg-wipe').textContent = 'Press again to erase everything'; } else g.resetProgress(); } }, 'Erase saved progress')),
       el('p', { class: 'note' }, `Cash ${money(S().cash)}. The test cash button is here so the garage can be tried without grinding; it will go before release.`),
       el('dl', { class: 'keys' },
-        el('dt', null, 'Drive'), el('dd', null, 'W A S D or arrows. Space is the handbrake. Hold brake at a stop to reverse.'),
+        el('dt', null, 'Drive'), el('dd', null, `${['gas', 'left', 'brake', 'right'].map((id) => g.keyLabel(id)).join(' ')} to drive, ${g.keyLabel('hand')} is the handbrake. Hold brake at a stop to reverse.`),
         el('dt', null, 'Kid mode'), el('dd', null, 'The car drives forward by itself at a gentle speed, so only steering is needed. Hold brake to stop. Cargo jobs give more time, patrols are slower to catch you, and races get easy rivals.'),
         el('dt', null, 'Lights'), el('dd', null, 'Stop in amber to load cargo and green to deliver. Blue is a garage, violet a race, cyan the next checkpoint.'),
-        el('dt', null, 'Keys'), el('dd', null, 'E use a garage or race start, R back to the road, F flip upright, C camera, U units, M sound, N music, T time of day.'),
-        el('dt', null, 'Controller'), el('dd', null, 'RT gas, LT brake, A handbrake, Y road, X flip, B camera, D-pad up to use, Start for this menu.')),
+        el('dt', null, 'Keys'), el('dd', null, ['action', 'reset', 'flip', 'camera', 'map', 'units', 'mute', 'music', 'time'].map((id) => `${g.keyLabel(id)} ${actionName(id).toLowerCase()}`).join(', ') + '. Change them in Controls.'),
+        el('dt', null, 'Controller'), el('dd', null, ['gas', 'brake', 'hand', 'nitro', 'reset', 'flip', 'camera', 'action', 'map', 'pause'].map((id) => `${g.padLabel(id)} ${actionName(id).toLowerCase()}`).join(', ') + ', left stick to steer.')),
     ], () => g.resume());
   }
 
@@ -284,6 +286,45 @@ export function createUI(g) {
     ], () => pause());
   }
 
+  // ---------- controls: every key and controller button can be changed ----------
+  let ctlTab = 'keys', ctlWait = null, ctlMsg = '';
+  const CTL_LISTS = { keys: ACTIONS.map((a) => a.id), p2: P2_ACTIONS, pad: PAD_ACTIONS };
+  const padShort = (name) => (name || '').replace(/\s*\(.*$/, '').trim() || 'A controller';
+  function controls(t) {
+    if (t && t !== ctlTab) { ctlTab = t; ctlMsg = ''; }
+    const b = g.binds(), pad = g.padInfo(), set = ctlTab, mb = menuButtons(pad.kind);
+    const label = (v) => (set === 'pad' ? buttonName(v, pad.kind) : keyName(v));
+    const slot = (id, k) => { const v = b[set][id][k], waiting = !!ctlWait && ctlWait.id === id && ctlWait.slot === k;
+      return el('button', { id: `ctl-${id}-${k}`, type: 'button', class: 'slot' + (waiting ? ' wait' : '') + (v == null ? ' empty' : ''), 'aria-label': `${actionName(id)}, ${k ? 'second' : 'first'} ${set === 'pad' ? 'button' : 'key'}: ${v == null ? 'none' : label(v)}`, onclick: () => bindSlot(id, k) },
+        waiting ? (set === 'pad' ? 'Press a button' : 'Press a key') : v == null ? '—' : label(v)); };
+    const note = set === 'keys' ? 'Pick a box, then press the key you want. Each action can have two keys. Escape always opens the menu.'
+      : set === 'p2' ? "Player 2's keys in a two-player race. Player 1 keeps every keyboard key that player 2 does not use."
+        : (pad.name ? `Found: ${padShort(pad.name)} (${STYLE_NAME[pad.kind]} buttons).` : 'No controller found yet. Connect one and press any button on it.') +
+          ` Pick a box, then press the button you want. Steer with the left stick or the buttons below. In menus ${buttonName(mb.accept, pad.kind)} picks and ${buttonName(mb.back, pad.kind)} goes back.`;
+    card('controls', [
+      el('span', { class: 'lbl' }, 'Menu'), el('h2', { id: 'dlg-title' }, 'Controls'),
+      seg('Set up', [{ id: 'ctl-tab-keys', text: 'Keyboard', on: set === 'keys', pick: () => controls('keys') }, { id: 'ctl-tab-p2', text: 'Player 2', on: set === 'p2', pick: () => controls('p2') }, { id: 'ctl-tab-pad', text: 'Controller', on: set === 'pad', pick: () => controls('pad') }]),
+      el('p', { class: 'note', id: 'ctl-note' }, note),
+      set === 'pad' && seg('Button names', STYLES.map((st) => ({ id: 'ctl-style-' + st, text: STYLE_NAME[st], on: b.style === st, pick: () => { g.setPadStyle(st); controls(); } }))),
+      el('div', { class: 'binds', id: 'ctl-list' }, CTL_LISTS[set].map((id) => [el('span', { class: 'bname' }, actionName(id)), slot(id, 0), slot(id, 1)])),
+      el('p', { class: 'note', id: 'ctl-msg', 'aria-live': 'polite' }, ctlMsg || ' '),
+      el('div', { class: 'actions' },
+        el('button', { id: 'ctl-back', type: 'button', class: 'btn primary', onclick: () => { g.cancelCapture(); pause(); } }, 'Back to the menu'),
+        el('button', { id: 'ctl-reset', type: 'button', class: 'btn', onclick: () => { g.cancelCapture(); g.resetBinds(set); ctlMsg = 'Back to the standard ' + (set === 'pad' ? 'buttons.' : 'keys.'); controls(); focusOn($('ctl-reset')); } }, 'Reset to standard')),
+    ], () => { if (ctlWait) g.cancelCapture(); else pause(); });
+  }
+  function bindSlot(id, k) {
+    const set = ctlTab, kind0 = g.padInfo().kind, label = (v) => (set === 'pad' ? buttonName(v, kind0) : keyName(v));
+    ctlWait = { id, slot: k };
+    ctlMsg = set === 'pad' ? `Press the controller button for ${actionName(id)}. Waiting 6 seconds.` : `Press the key for ${actionName(id)}. Escape cancels, Delete clears the box.`;
+    controls(); focusOn($(`ctl-${id}-${k}`));
+    g.capture(set === 'pad' ? 'pad' : 'key', (v) => {
+      ctlWait = null;
+      if (v === undefined) ctlMsg = 'No change.';
+      else { const from = g.setBind(set, id, k, v); ctlMsg = v == null ? `${actionName(id)}: box cleared.` : `${actionName(id)}: ${label(v)}` + (from ? `, taken off ${actionName(from)}.` : '.'); }
+      if (kind === 'controls') { controls(); focusOn($(`ctl-${id}-${k}`)); }
+    });
+  }
   // ---------- big countdown numbers ----------
   const count = $('count');
   // two players: pick the event and player 2's car, then race head to head on a split screen
@@ -296,7 +337,8 @@ export function createUI(g) {
     const ev = info.events.find((e) => e.id === duoPick.ev), ci = info.cars.indexOf(duoPick.car);
     card('duel', [
       el('span', { class: 'lbl' }, 'Same screen'), el('h2', { id: 'dlg-title' }, 'Two players'),
-      el('p', { class: 'note' }, info.touch && !info.pads ? 'Two players need a keyboard or game controllers (a computer, a TV browser, or a tablet with controllers).' : 'Player 1: W A S D, Space to slide. Player 2: arrow keys, right Shift to slide. With controllers: two, one each; one, it goes to player 2.'),
+      el('p', { class: 'note' }, info.touch && !info.pads ? 'Two players need a keyboard or game controllers (a computer, a TV browser, or a tablet with controllers).' : (() => { const b = g.binds(), K = (set, id) => (b[set][id] || []).map(keyName)[0] || '?', four = (set) => ['gas', 'left', 'brake', 'right'].map((id) => K(set, id)).join(' ');
+        return `Player 1: ${four('keys')}, ${K('keys', 'hand')} to slide. Player 2: ${four('p2')}, ${K('p2', 'hand')} to slide. With controllers: two, one each; one, it goes to player 2. Change keys in the menu, Controls.`; })()),
       seg('Event', info.events.map((e) => ({ id: 'dlg-duo-' + e.id, text: e.short || e.name, on: e.id === duoPick.ev, pick: () => duelSetup({ ev: e.id }) }))),
       el('p', { class: 'note' }, ev.name + (ev.laps > 1 ? ` · ${ev.laps} laps` : '')),
       el('div', { class: 'pick' }, el('span', { class: 'lbl' }, 'Player 2 drives'), el('div', { class: 'seg' },
@@ -324,7 +366,8 @@ export function createUI(g) {
   function showCount(text, go) { count.textContent = text; count.classList.toggle('go', !!go); count.classList.remove('show'); void count.offsetWidth; count.classList.add('show'); }
 
   return {
-    offer, cupOffer, results, standings, pause, goals, showCount, duelSetup, duelResults,
+    offer, cupOffer, results, standings, pause, goals, showCount, duelSetup, duelResults, controls,
+    padChanged() { if (kind === 'controls' && !modal.hidden && !ctlWait) { const f = document.activeElement && document.activeElement.id; controls(); if (f && $(f)) focusOn($(f)); } },
     openGarage(p) { place = p; tab = 'cars'; sel = S().car; $('g-place').textContent = p.name; garage.hidden = false; draw(); body.scrollTop = 0; focusOn($('g-leave')); },
     closeGarage() { garage.hidden = true; clearTimeout(statT); },
     close() { modal.hidden = true; kind = null; onBack = null; },
@@ -340,6 +383,7 @@ export function createUI(g) {
     },
     accept() { const list = focusables(), cur = document.activeElement; if (list.includes(cur)) cur.click(); else focusOn(list.find((e) => e.classList.contains('primary')) || list[0]); },
     back() { if (!modal.hidden) { if (onBack) onBack(); } else if (!garage.hidden) g.leaveGarage(); },
-    tab(d) { if (garage.hidden || !modal.hidden) return; const names = ['cars', 'up', 'tune']; setTab(names[(names.indexOf(tab) + d + 3) % 3]); focusOn($('g-tab-' + tab)); },
+    tab(d) { if (kind === 'controls' && !modal.hidden && !ctlWait) { const t = ['keys', 'p2', 'pad']; controls(t[(t.indexOf(ctlTab) + d + 3) % 3]); focusOn($('ctl-tab-' + ctlTab)); return; }
+      if (garage.hidden || !modal.hidden) return; const names = ['cars', 'up', 'tune']; setTab(names[(names.indexOf(tab) + d + 3) % 3]); focusOn($('g-tab-' + tab)); },
   };
 }

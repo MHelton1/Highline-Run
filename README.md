@@ -1,4 +1,4 @@
-# Highline Run: browser prototype, build 27
+# Highline Run: browser prototype, build 28
 
 **Play it:** https://mhelton1.github.io/Highline-Run/ (works on a phone; progress is saved in that browser).
 
@@ -16,6 +16,7 @@ No rendering (run in plain node, so the tests can drive them):
 - `src/nav.js` the big map's marker: which place a tap means (`pickPoint`), arrival, the map's view box
 - `src/stunts.js` free-roam scoring: `DriftMeter` (drift chains, multiplier, pay), speed trap spots (`placeTraps`) and crossing
 - `src/tips.js` tips for new players: each tip's trigger and skip test, `nextTip` (one at a time, at most one a minute, once each)
+- `src/binds.js` controls the player can change: every action's keys (and player 2's), controller buttons, key and button names (Xbox, Switch, PlayStation), cleaning a saved copy
 - `src/duel.js` two players on one screen: `Duel` (side-by-side grid, each player's checkpoints and laps, finish order, 25 s grace after the first finisher, per-player reset)
 - `src/daily.js` the daily challenge: today's task per date and region (`dailyFor`), progress, streak pay, save cleaning
 - `src/terrain.js` world data: heightfield, roads, surface grip table, ground queries, places (cargo sites, garages, race lines)
@@ -234,6 +235,14 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   scissor viewports (side by side when wider than tall, else stacked), each half with its own chase camera (`cam2`) and
   panel (`#duo`); patrols, smuggler, tips and the touch controls are hidden. No prize money, no saves touched. Tests:
   `tests/duel.mjs [region]` and `tests/duelui.cjs [desk|port]`.
+- Controls (build 28, Michael asked 2026-11-21 for "full keybinding support and controller mapping for switch and Xbox
+  controllers"): menu "Controls" has three tabs (Keyboard, Player 2, Controller). Pick a box, press the key or button;
+  it is taken off any other action in the same set. Escape cancels and is never bindable (always the menu), Delete clears
+  a key box, a controller box gives up after 6 s. Saved as `binds` (null = standard). `input.setBinds()` builds the
+  press maps; `input.capture(kind, done)` waits for a key or button. Controller kind from the Gamepad id (vendor 045e
+  Xbox, 057e Switch, 054c PlayStation) or forced by the Button names choice; buttons are standard-layout positions, so on
+  Switch the bottom button is B and A (right) picks in menus. Hints, tips, prompts and the start screen use the bound
+  names. Tests: `tests/binds.mjs`, `tests/controlsui.cjs` (a fake Switch controller).
 - Cargo rivals steer round a pickup's hut when their way in runs through it (the coast's huts sat on the line in).
 - Kid mode (`src/kid.js`, saved as `kid`): `kidInput()` replaces the pedals so the car drives itself at `KID` speeds
   (22 m/s tarmac, 16 dirt, 12 off road, less in turns); a held brake still stops and reverses. Cargo time x1.4, bust

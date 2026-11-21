@@ -235,6 +235,12 @@ body.kid #tg, body.kid #th { display: none; }
 .seg button { cursor: pointer; padding: 8px 4px; border: 1px solid var(--line); border-radius: 8px; background: transparent; font: 600 15.5px var(--display); letter-spacing: .08em; text-transform: uppercase; color: var(--dim); }
 .seg button[aria-pressed="true"] { background: var(--paper); border-color: var(--paper); color: var(--ink); }
 .seg button:focus-visible { outline: 3px solid var(--paper); outline-offset: 2px; }
+.binds { display: grid; grid-template-columns: 1fr minmax(84px, auto) minmax(84px, auto); gap: 6px 8px; align-items: center; }
+.binds .bname { font-size: 15px; color: var(--paper); }
+.binds .slot { cursor: pointer; min-height: 36px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--fill); font: 600 15px var(--display); letter-spacing: .04em; color: var(--paper); white-space: nowrap; }
+.binds .slot.empty { color: var(--dim); background: transparent; } .binds .slot.wait { border-color: var(--amber); color: var(--amber); }
+.binds .slot:focus-visible { outline: 3px solid var(--paper); outline-offset: 2px; }
+#ctl-msg { min-height: 1.3em; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; } .actions .btn { flex: 1 1 150px; }
 .dialog.pause .actions { display: grid; grid-template-columns: 1fr 1fr; } .dialog.pause .actions .btn { font-size: 15.5px; padding: 9px 8px; } .dialog.pause #dlg-go { grid-column: 1 / -1; font-size: 17px; padding: 10px 16px; }
 .dialog .keys { padding: 10px 12px; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; }
@@ -382,7 +388,7 @@ body.duo .hud > :not(#toast) { visibility: hidden; } body.duo #touch, body.duo #
   <div id="start">
     <div class="inner">
       <h1>Highline <em>Run</em></h1>
-      <p>Build 27. New: two players on one screen (menu, Two players) with a keyboard or two controllers. Build 26: in rain the wheels throw mud off dirt and spray off wet roads; in snow, white powder. Tips come at most once a minute. Build 25 added a daily challenge (see the menu), tyre marks and nitro flames. Recent: tips for new players, a nitro kit at the garages, drift scoring and speed traps, and a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
+      <p>Build 28. New: change any key or controller button in the menu, Controls, with button names for Xbox, Switch and PlayStation controllers. Build 27: two players on one screen (menu, Two players) with a keyboard or two controllers. Build 26: in rain the wheels throw mud off dirt and spray off wet roads; in snow, white powder. Tips come at most once a minute. Build 25 added a daily challenge (see the menu), tyre marks and nitro flames. Recent: tips for new players, a nitro kit at the garages, drift scoring and speed traps, and a big map: tap the corner map to drop a marker. Three regions to explore: the Highline Mountains, the Redrock Basin desert and the Saltcliff Coast. Run cargo past the patrols, buy and tune cars at the garages, race six events and a three-race cup in each region, hunt for hidden cars and crates, and work through the goals. Weather and time of day change as you drive. Kid mode makes the car drive itself.</p>
       <dl class="keys card desk">
         <dt>W A S D / arrows</dt><dd>Gas, steer, brake. Hold brake at a stop to reverse.</dd>
         <dt>Space · Shift</dt><dd>Handbrake for slides · nitro (once you buy the kit at a garage)</dd>

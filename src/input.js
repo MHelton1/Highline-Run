@@ -1,23 +1,37 @@
 // Keyboard, gamepad and touch merged into one input state. While a menu is open the same devices move a highlight instead.
+// Which keys and buttons do what comes from the player's bindings (see binds.js); the menu keys themselves are fixed.
+import { defaultBinds, pressMap, styleOf, menuButtons } from './binds.js';
 export function createInput(touchRoot, canvas) {
   const keys = new Set(), touch = { left: 0, right: 0, gas: 0, brake: 0, hand: 0, nitro: 0 };
   const state = { steer: 0, throttle: 0, brake: 0, handbrake: false, nitro: false, analog: false, pad: false };
   const held = new Set(), listeners = {};
   let menu = false, navDir = '', navT = 0;
   const fire = (name, a, b) => { if (listeners[name]) listeners[name](a, b); };
-  const actions = { KeyR: 'reset', KeyF: 'flip', KeyC: 'camera', KeyM: 'mute', KeyN: 'music', KeyT: 'time', KeyU: 'units', KeyO: 'photo', KeyG: 'map', KeyE: 'action', Enter: 'action', Backspace: 'reset2', Escape: 'pause', KeyP: 'pause' };
+  let B = defaultBinds(), actions = {}, padPress = {}, p2Keys = new Set();
+  const setBinds = (b) => { B = b; actions = pressMap(B.keys); actions.Escape = 'pause'; padPress = pressMap(B.pad); p2Keys = new Set(Object.values(B.p2).flat()); };
+  setBinds(B);
+  let capture = null;                 // waiting for a key or button to bind: { kind: 'key' | 'pad', done(value), armed, until }
+  const endCapture = (v) => { const c = capture; capture = null; if (c) c.done(v); };
   const NAV = { ArrowUp: [0, -1], KeyW: [0, -1], ArrowDown: [0, 1], KeyS: [0, 1], ArrowLeft: [-1, 0], KeyA: [-1, 0], ArrowRight: [1, 0], KeyD: [1, 0] };
   addEventListener('keydown', (e) => {
+    if (capture) {                    // binding: Escape cancels, Delete clears, any other key is the new one
+      e.preventDefault(); e.stopPropagation(); if (e.repeat) return;
+      if (e.code === 'Escape') endCapture(undefined); else if (capture.kind === 'key') endCapture(e.code === 'Delete' ? null : e.code);
+      return;
+    }
     if (e.ctrlKey || e.metaKey || e.altKey) return;
     if (menu) {
       const t = document.activeElement, slider = t && t.type === 'range', n = NAV[e.code];
-      if (e.code === 'Escape' || e.code === 'KeyP') { e.preventDefault(); if (!e.repeat) fire('pause'); }
+      if (e.code === 'Escape' || actions[e.code] === 'pause') { e.preventDefault(); if (!e.repeat) fire('pause'); }
       else if (n) { if (slider && n[0]) return; e.preventDefault(); fire('nav', n[0], n[1]); }          // a slider keeps its own left and right
       else if (e.code === 'Enter' && !(t && (t.tagName === 'BUTTON' || t.tagName === 'INPUT'))) { e.preventDefault(); fire('accept'); }
       return;
     }
-    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
-    if (!e.repeat && actions[e.code]) fire(actions[e.code]);
+    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space', 'Backspace', 'Slash', 'Tab'].includes(e.code) || B.keys.gas.includes(e.code)) e.preventDefault();
+    if (!e.repeat) {
+      if (state.duo && B.p2.reset.includes(e.code)) fire('reset2');
+      else if (actions[e.code] && !(state.duo && p2Keys.has(e.code) && e.code !== 'Escape')) fire(actions[e.code]);
+    }
     keys.add(e.code);
   });
   addEventListener('keyup', (e) => keys.delete(e.code));
@@ -135,25 +149,44 @@ export function createInput(touchRoot, canvas) {
     // if the phone sends its own click for that tap anyway, it must not count twice
     document.addEventListener('click', (e) => { if (e.isTrusted && performance.now() - ghost.t < 700 && Math.hypot(e.clientX - ghost.x, e.clientY - ghost.y) < 40) { e.stopImmediatePropagation(); e.preventDefault(); } }, true);
   }
-  // gamepad buttons: Y road, X flip, B camera, Start menu, D-pad up to use a garage or race start; in menus A picks and B goes back
-  const DRIVE = { 3: 'reset', 2: 'flip', 1: 'camera', 9: 'pause', 12: 'action', 8: 'map' }, MENU = { 0: 'accept', 1: 'back', 9: 'pause' };
+  // gamepad buttons come from the bindings; in menus the face buttons pick and go back (A picks on Xbox and on Switch,
+  // which sit in different places), the D-pad and left stick move, the shoulders change tabs
   const dz = (v) => Math.abs(v) < 0.12 ? 0 : (v - Math.sign(v) * 0.12) / 0.88;
   state.on = (name, fn) => { listeners[name] = fn; };
+  state.setBinds = setBinds; Object.defineProperty(state, 'binds', { get: () => B });
+  state.padKind = () => { try { for (const p of navigator.getGamepads ? navigator.getGamepads() : []) if (p && p.connected) return styleOf(B.style, p.id); } catch (_) {} return styleOf(B.style, ''); };
+  state.padName = () => { try { for (const p of navigator.getGamepads ? navigator.getGamepads() : []) if (p && p.connected) return p.id; } catch (_) {} return ''; };
+  // wait for the next key (kind 'key') or controller button (kind 'pad'); done(value) gets the code or button number,
+  // null to clear the slot, or undefined if cancelled (Escape, or 6 s with no button)
+  state.capture = (kind, done) => { endCapture(undefined); capture = { kind, done, armed: false, until: performance.now() + 6000 }; keys.clear(); };
+  state.cancelCapture = () => endCapture(undefined);
+  Object.defineProperty(state, 'capturing', { get: () => (capture ? capture.kind : null) });
+  const anyKey = (list) => { for (const c of list) if (keys.has(c)) return 1; return 0; };
   state.fire = fire;
   Object.defineProperty(state, 'menu', { get: () => menu, set(v) { menu = !!v; if (menu) { keys.clear(); fingers.clear(); apply(); } } });
   state.poll = (now = performance.now()) => {
-    const k = (c) => keys.has(c) ? 1 : 0;
-    let steer = (k('KeyA') || k('ArrowLeft') || touch.left) - (k('KeyD') || k('ArrowRight') || touch.right);
-    let thr = k('KeyW') || k('ArrowUp') || touch.gas, brk = k('KeyS') || k('ArrowDown') || touch.brake, hb = !!(k('Space') || touch.hand), nos = !!(k('ShiftLeft') || k('ShiftRight') || k('KeyB') || touch.nitro), analog = false;
+    const K = B.keys;
+    let steer = (anyKey(K.left) || touch.left) - (anyKey(K.right) || touch.right);
+    let thr = anyKey(K.gas) || touch.gas, brk = anyKey(K.brake) || touch.brake, hb = !!(anyKey(K.hand) || touch.hand), nos = !!(anyKey(K.nitro) || touch.nitro), analog = false;
     // tilt steering (phones, when switched on): the steering arrows still win while a thumb is on one
     const T = state.tilt;
     if (T && T.on && !touch.left && !touch.right && !menu) { steer = Math.sign(T.steer) * Math.pow(Math.abs(T.steer), 1.3); analog = true; }
-    let gp = null;
-    try { for (const p of navigator.getGamepads ? navigator.getGamepads() : []) if (p && p.connected) { gp = p; break; } } catch (_) {}
+    let gp = null, all = [];
+    try { all = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter((p) => p && p.connected); gp = all[0] || null; } catch (_) {}
     state.pad = !!gp;
+    if (capture && capture.kind === 'pad') {   // binding a button: wait until every button is up, then take the next one pressed
+      let down = -1;
+      for (const p of all) p.buttons.forEach((x, i) => { if (down < 0 && x && x.value > 0.5) down = i; });
+      if (!capture.armed) { if (down < 0) capture.armed = true; }
+      else if (down >= 0) { held.add(down); endCapture(down); }
+      if (capture && now > capture.until) endCapture(undefined);
+      gp = null;
+    } else if (capture && capture.kind === 'key') gp = null;
     if (gp && !(state.duo && !menu)) {   // in a two-player race the pads are read by poll2 instead
-      const b = (i) => gp.buttons[i] ? gp.buttons[i].value : 0, map = menu ? MENU : DRIVE;
-      for (let i = 0; i < 16; i++) {       // act on a fresh press only, so a button held while a menu opens does nothing there
+      const b = (i) => gp.buttons[i] ? gp.buttons[i].value : 0, mb = menuButtons(styleOf(B.style, gp.id));
+      const menuMap = { [mb.accept]: 'accept', [mb.back]: 'back', 9: 'pause' }; for (const n of B.pad.pause) menuMap[n] = 'pause';
+      const map = menu ? menuMap : padPress;
+      for (let i = 0; i < gp.buttons.length && i < 32; i++) {       // act on a fresh press only, so a button held while a menu opens does nothing there
         if (b(i) <= 0.5) { held.delete(i); continue; }
         if (held.has(i)) continue;
         held.add(i);
@@ -168,36 +201,38 @@ export function createInput(touchRoot, canvas) {
       } else {
         const sx = dz(gp.axes[0] || 0);
         if (sx) { steer = -Math.sign(sx) * Math.pow(Math.abs(sx), 1.6); analog = true; }
-        thr = Math.max(thr, b(7)); brk = Math.max(brk, b(6)); if (b(0) > 0.5 || b(5) > 0.5) hb = true; if (b(4) > 0.5) nos = true;
-        if (b(14) > 0.5) steer = 1; if (b(15) > 0.5) steer = -1;
+        const P = B.pad, most = (list) => list.reduce((m, n) => Math.max(m, b(n)), 0);
+        thr = Math.max(thr, most(P.gas)); brk = Math.max(brk, most(P.brake)); if (most(P.hand) > 0.5) hb = true; if (most(P.nitro) > 0.5) nos = true;
+        if (most(P.left) > 0.5) steer = 1; if (most(P.right) > 0.5) steer = -1;
       }
     }
     if (menu) { steer = thr = brk = 0; hb = nos = false; }
     state.steer = steer; state.throttle = thr; state.brake = brk; state.handbrake = hb; state.nitro = nos; state.analog = analog;
     return state;
   };
-  // Two players on one screen: player 1 on W A S D (Space handbrake), player 2 on the arrows (right Shift, right Ctrl or
-  // / for the handbrake). Controllers: with two, one each; with one, it is player 2's and player 1 keeps the keyboard.
-  // Y on a controller puts that player back on the course, Start opens the menu.
+  // Two players on one screen: player 2 has their own keys (the arrows by default) and player 1 keeps every driving key
+  // that player 2 does not use. Controllers: with two, one each; with one, it is player 2's and player 1 keeps the
+  // keyboard. A controller's "back to the road" button puts that player back on the course, its menu button opens the menu.
   const held2 = [new Set(), new Set()];
   state.duo = false;
   state.poll2 = () => {
-    const k = (c) => keys.has(c) ? 1 : 0;
+    const K = B.keys, Q = B.p2, mine = (list) => anyKey(list.filter((c) => !p2Keys.has(c)));
     const out = [
-      { steer: k('KeyA') - k('KeyD'), throttle: k('KeyW'), brake: k('KeyS'), handbrake: !!k('Space'), analog: false },
-      { steer: k('ArrowLeft') - k('ArrowRight'), throttle: k('ArrowUp'), brake: k('ArrowDown'), handbrake: !!(k('ShiftRight') || k('ControlRight') || k('Slash') || k('Numpad0')), analog: false },
+      { steer: mine(K.left) - mine(K.right), throttle: mine(K.gas), brake: mine(K.brake), handbrake: !!mine(K.hand), analog: false },
+      { steer: anyKey(Q.left) - anyKey(Q.right), throttle: anyKey(Q.gas), brake: anyKey(Q.brake), handbrake: !!anyKey(Q.hand), analog: false },
     ];
     let pads = [];
     try { pads = [...(navigator.getGamepads ? navigator.getGamepads() : [])].filter((p) => p && p.connected); } catch (_) {}
     const slot = pads.length >= 2 ? [pads[0], pads[1]] : [null, pads[0] || null];
     slot.forEach((gp, i) => {
       if (!gp) return;
-      const b = (n) => gp.buttons[n] ? gp.buttons[n].value : 0, o = out[i];
-      for (const n of [3, 9]) { if (b(n) <= 0.5) { held2[i].delete(n); continue; } if (held2[i].has(n)) continue; held2[i].add(n); if (!menu) fire(n === 3 ? 'duoReset' : 'pause', i); }
+      const b = (n) => gp.buttons[n] ? gp.buttons[n].value : 0, o = out[i], P = B.pad, most = (list) => list.reduce((m, n) => Math.max(m, b(n)), 0);
+      const acts = [...P.reset.map((n) => [n, 'duoReset']), ...P.pause.map((n) => [n, 'pause']), ...(P.pause.includes(9) ? [] : [[9, 'pause']])];
+      for (const [n, a] of acts) { if (b(n) <= 0.5) { held2[i].delete(n); continue; } if (held2[i].has(n)) continue; held2[i].add(n); if (!menu) fire(a, i); }
       const sx = dz(gp.axes[0] || 0);
       if (sx) { o.steer = -Math.sign(sx) * Math.pow(Math.abs(sx), 1.6); o.analog = true; }
-      if (b(14) > 0.5) o.steer = 1; if (b(15) > 0.5) o.steer = -1;
-      o.throttle = Math.max(o.throttle, b(7)); o.brake = Math.max(o.brake, b(6)); if (b(0) > 0.5 || b(5) > 0.5) o.handbrake = true;
+      if (most(P.left) > 0.5) o.steer = 1; if (most(P.right) > 0.5) o.steer = -1;
+      o.throttle = Math.max(o.throttle, most(P.gas)); o.brake = Math.max(o.brake, most(P.brake)); if (most(P.hand) > 0.5) o.handbrake = true;
     });
     state.pads = pads.length;
     if (menu) for (const o of out) { o.steer = o.throttle = o.brake = 0; o.handbrake = false; }

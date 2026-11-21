@@ -23,6 +23,7 @@ import { nextTip, skipped, TIP_SHOW, TIP_GAP } from './tips.js';
 import { createSkids } from './skids.js';
 import { dayKey, rollDaily, dailyEvent, dailyProgress, streakPay } from './daily.js';
 import { Duel, P_NAMES } from './duel.js';
+import { cleanBinds, defaultBinds, setBind, resetSet, keyFor, buttonFor, keysFor, STYLES } from './binds.js';
 import { DriftMeter, slideAngle, driftPay, trapPay, placeTraps, crossed, MPH, TRAP_MIN_MPH, NitroTank, NITRO } from './stunts.js';
 import { REGIONS, REGION_IDS } from './regions.js';
 
@@ -216,7 +217,7 @@ function start(hot) {
     const s = S(); let near = null, nd = 60;
     for (const z of zones) { const d = Math.hypot(car.pos.x - z.x, car.pos.z - z.z); if (d < nd) { nd = d; near = z.kind; } }
     const delivered = Object.values(s.stats || {}).reduce((a, st) => a + (st.d || 0), 0);
-    return { t: driveT, job: !!game.job, heat: !!game.heat, near, cars: Object.keys(s.cars).length, raced: Object.keys(s.rank).length > 0, delivered, stuck: stuckT > 6, cash: s.cash, nitro: !!s.nitro, goalsDone: s.done.length, touch: coarse };
+    return { t: driveT, job: !!game.job, heat: !!game.heat, near, cars: Object.keys(s.cars).length, raced: Object.keys(s.rank).length > 0, delivered, stuck: stuckT > 6, cash: s.cash, nitro: !!s.nitro, goalsDone: s.done.length, touch: coarse && !input.pad, key: said };
   }
   function hideTip() { tipUp = 0; tipEl.hidden = true; }
   function tipTick(dt) {
@@ -342,6 +343,23 @@ function start(hot) {
   // title: the opening screen. roam: free driving with cargo runs. garage, offer (a race card), race, results.
   const input = createInput($('touch'), canvas);
   const tilt = createTilt(), wake = createWake(); input.tilt = tilt;
+  // ---- controls the player has changed (menu, Controls) ----
+  const kl = (id) => keyFor(input.binds, id) || '?', pl = (id) => buttonFor(input.binds, id, input.padKind()) || '?';
+  const said = (id) => (input.pad ? pl(id) : kl(id));       // what to tell the player to press, for the device they use
+  function keyText() {           // the hint card and the start screen list follow the bindings
+    const b = input.binds, K = (id) => keysFor(b, id) || 'not set', P = (id) => buttonFor(b, id, input.padKind()) || 'not set', esc = (t) => t.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]);
+    $('hint').innerHTML = `<b>${esc(kl('reset'))}</b> back to road &nbsp; <b>${esc(kl('flip'))}</b> flip upright<br><b>${esc(kl('camera'))}</b> camera &nbsp; <b>Esc</b> menu and settings`;
+    const d = document.querySelector('#start dl.keys.desk');
+    if (d) d.innerHTML = [[`${K('gas')} · ${K('brake')}`, 'Gas · brake (hold at a stop to reverse)'], [`${K('left')} · ${K('right')}`, 'Steer'], [`${K('hand')} · ${K('nitro')}`, 'Handbrake for slides · nitro (once you buy the kit at a garage)'],
+      ['Stop in a light', 'Amber loads cargo, green delivers. Blue is a garage, violet a race.'], [`${K('reset')} · ${K('flip')} · Esc`, 'Back to the road · flip upright · menu'], [`${K('map')} · ${K('photo')}`, 'Big map and marker · photo mode'],
+      ['Controller', `${P('gas')} gas, ${P('brake')} brake, left stick steer, ${P('hand')} handbrake, ${P('nitro')} nitro, ${P('reset')} road, ${P('flip')} flip, ${P('camera')} camera, ${P('map')} map, ${P('pause')} menu`],
+      ['Your controls', 'Change any key or controller button in the menu, Controls.']].map(([t, v]) => `<dt>${esc(t)}</dt><dd>${esc(v)}</dd>`).join('');
+  }
+  function useBinds() { input.setBinds(S().binds ? cleanBinds(S().binds) : defaultBinds()); keyText(); }
+  function saveBinds() { input.setBinds(input.binds); S().binds = JSON.parse(JSON.stringify(input.binds)); store.commit(); keyText(); }
+  useBinds();
+  addEventListener('gamepadconnected', () => { keyText(); if (ui) ui.padChanged(); });
+  addEventListener('gamepaddisconnected', () => { keyText(); if (ui) ui.padChanged(); });
   const shake = (pattern) => { if (S().buzz) buzz(pattern); };
   async function setTilt(on) {        // must run from a tap: iPhones ask before letting the page read the tilt
     if (!on) { tilt.disable(); S().tilt = false; store.commit(); return true; }
@@ -692,7 +710,7 @@ function start(hot) {
   function applyRemote() {
     pendingRemote = false; const s = S();
     if (s.region !== world.region) { travel(s.region, true); return; }
-    garageAt = garages[s.at] || garages[0]; showCar(s.car); crateVis.forEach((v, i) => { v.visible = !crateGot(i); }); showBarnCar(); audio.setMuted(s.muted); audio.setMusic(s.music); if (s.tod !== DAY.tod && (DAY.tod || s.tod !== 'day')) setTime(s.tod); armed = false; titleInfo(); showKid();
+    garageAt = garages[s.at] || garages[0]; showCar(s.car); crateVis.forEach((v, i) => { v.visible = !crateGot(i); }); showBarnCar(); audio.setMuted(s.muted); audio.setMusic(s.music); if (s.tod !== DAY.tod && (DAY.tod || s.tod !== 'day')) setTime(s.tod); armed = false; titleInfo(); showKid(); useBinds();
     if (mode !== 'title') toast('Loaded your saved progress', 3);
   }
 
@@ -719,7 +737,10 @@ function start(hot) {
     nextCupRound: () => { const c = myCup(); if (c) startRace(cupRound(races, world.region, c.round), c.lv); else endRace(); },
     racing: () => mode === 'race' || mode === 'duel', resume, restartRace: () => (duel ? startDuel(duelSet.def, duelSet.p2) : startRace(race.def)), quitRace: () => (duel ? endDuel() : endRace()),
     duelInfo: () => ({ events: races.map((d) => ({ id: d.id, name: d.name, short: d.short || d.name, laps: d.laps || 1 })), cars: Object.keys(S().cars), p1: S().car, touch: coarse, pads: input.pads || 0 }),
-    startDuel: (evId, carId) => startDuel(races.find((d) => d.id === evId), carId), endDuel, duelBack: () => (mode === 'duelres' ? endDuel() : resume()),
+    startDuel: (evId, carId) => startDuel(races.find((d) => d.id === evId), carId), endDuel,
+    binds: () => input.binds, capture: (kind, done) => input.capture(kind, done), cancelCapture: () => input.cancelCapture(), padInfo: () => ({ name: input.padName(), kind: input.padKind() }),
+    setBind: (set, id, slot, v) => { const from = setBind(input.binds, set, id, slot, v); saveBinds(); return from; }, resetBinds: (set) => { resetSet(input.binds, set); saveBinds(); },
+    setPadStyle: (st) => { if (STYLES.includes(st)) { input.binds.style = st; saveBinds(); } }, keyLabel: kl, padLabel: pl, duelBack: () => (mode === 'duelres' ? endDuel() : resume()),
     options: () => ({ metric: metric(), muted: S().muted, music: S().music, tod: TOD_NAME[S().tod], weather: WEATHER_MODE_NAME[S().weather], goals: (() => { const a = allGoals(S()); return { done: a.filter((q) => S().done.includes(q.id)).length, all: a.length }; })(), fps: showFps, kid: S().kid, touch: coarse, tilt: S().tilt, canBuzz: canBuzz(), buzz: S().buzz }), toggleKid: () => setKid(!S().kid),
     toggleUnits: setUnits, toggleMute: setMute, toggleMusic: setMusic, nextWeather: () => { setWeather(WEATHER_MODES[(WEATHER_MODES.indexOf(S().weather) + 1) % WEATHER_MODES.length]); store.commit(); }, ghostTime, setGhost: (on) => { S().ghost = on; store.commit(); }, nextTime: () => { setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); }, toggleFps: () => { showFps = !showFps; if (!showFps) $('fps').textContent = ''; },
     findHints, findCars: () => FIND_IDS, showNitro,
@@ -854,7 +875,7 @@ function start(hot) {
     if (z !== zone) { zone = z; dwell = 0; }
     if (!z) { armed = true; promptEl.hidden = true; return; }
     const slow = car.speed < 2.5;
-    if (promptEl.hidden === slow) { promptEl.hidden = !slow; el.ptext.textContent = z.label; el.pkey.textContent = input.pad ? 'D-pad ▲' : 'E'; promptEl.classList.toggle('race', z.kind === 'race'); }
+    if (promptEl.hidden === slow) { promptEl.hidden = !slow; el.ptext.textContent = z.label; el.pkey.textContent = said('action'); promptEl.classList.toggle('race', z.kind === 'race'); }
     dwell = slow && armed ? dwell + dt : 0;
     if (dwell > 0.7) enter(z);           // armed: the car drove in from outside, so stopping is enough
   }
@@ -880,7 +901,7 @@ function start(hot) {
       race.update(dt); raceEvents();
       if (mode === 'race' && race.state === 'done' && (resultsT -= dt) <= 0) { mode = 'results'; ui.results(race, raceNote); setMenu(); }
       if (mode === 'results') { const n = race.rivals.filter((r) => r.time != null).length; if (n !== doneN) { doneN = n; ui.standings(race); } }
-      if (mode === 'race' && race.state === 'run' && race.track) { offT = race.track.far > 45 ? offT + dt : 0; if (offT > 1.5) { toast(coarse ? 'Off the course. Tap ROAD to go back' : 'Off the course. Press R to go back', 1.2); offT = 0; } }
+      if (mode === 'race' && race.state === 'run' && race.track) { offT = race.track.far > 45 ? offT + dt : 0; if (offT > 1.5) { toast(coarse && !input.pad ? 'Off the course. Tap ROAD to go back' : `Off the course. Press ${said('reset')} to go back`, 1.2); offT = 0; } }
     }
     if (driving() && mode !== 'duel') {
       if (world.sea != null && car.pos.y < world.sea - 0.6) {   // into the sea: a splash, then back on the road (or the course)
@@ -890,7 +911,7 @@ function start(hot) {
         if (car.up.y < 0.35 && car.speed < 2) { kidUpT += dt; if (kidUpT > 1.5) { kidUpT = 0; car.place(car.pos.x, car.pos.z, Math.atan2(car.fwd.x, car.fwd.z), 1.0); toast('Back on your wheels', 1.2); } } else kidUpT = 0;
         if (inp.throttle > 0.5 && car.speed < 0.8) { kidStuckT += dt; if (kidStuckT > 4) { kidStuckT = 0; input.fire('reset'); } } else kidStuckT = 0;
       }
-      if (car.up.y < 0.35 && car.speed < 2) { upside += dt; if (upside > 1.5) { toast(coarse ? 'Tap FLIP to get back on your wheels' : input.pad ? 'Press X to flip upright' : 'Press F to flip upright', 1); upside = 1; } } else upside = 0;
+      if (car.up.y < 0.35 && car.speed < 2) { upside += dt; if (upside > 1.5) { toast(coarse && !input.pad ? 'Tap FLIP to get back on your wheels' : `Press ${said('flip')} to flip upright`, 1); upside = 1; } } else upside = 0;
       if (car.grounded === 0 && car.up.y > 0.2) airT += dt; else { if (airT > 0.5) landed(airT); airT = 0; }
       if (mode === 'roam') findCheck();
     }

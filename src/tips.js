@@ -4,6 +4,9 @@
 export const TIP_GAP = 60;        // seconds from one tip to the next: at most one a minute (Michael, 2026-11-20)
 export const TIP_SHOW = 20;       // seconds a tip stays up (a tap closes it sooner)
 
+// the key or button for an action, as the player has set it (c.key comes from the game; tests may leave it out)
+const key = (c, id, def) => (c.key && c.key(id)) || def;
+
 export const TIPS = [
   { id: 'start', when: (c) => c.t > 3 && !c.job, skip: (c) => c.delivered > 0,
     text: (c) => 'Follow the arrow to an amber light and stop inside it to load cargo.' },
@@ -16,9 +19,9 @@ export const TIPS = [
   { id: 'race', when: (c) => c.near === 'race' && !c.job, skip: (c) => c.raced,
     text: (c) => 'Violet light: a race start. Stop in it to pick a race and how hard it is.' },
   { id: 'stuck', when: (c) => c.stuck, skip: () => false,
-    text: (c) => c.touch ? 'Stuck or on your roof? FLIP sets the car upright and ROAD puts you back on the road.' : 'Stuck or on your roof? F sets the car upright and R puts you back on the road.' },
+    text: (c) => c.touch ? 'Stuck or on your roof? FLIP sets the car upright and ROAD puts you back on the road.' : `Stuck or on your roof? ${key(c, 'flip', 'F')} sets the car upright and ${key(c, 'reset', 'R')} puts you back on the road.` },
   { id: 'map', when: (c) => c.t > 45 && !c.job && !c.heat, skip: () => false,
-    text: (c) => (c.touch ? 'Tap the corner map' : 'Press G or click the corner map') + ' for the big map, then tap a place to drop a marker the arrow will point to.' },
+    text: (c) => (c.touch ? 'Tap the corner map' : `Press ${key(c, 'map', 'G')} or click the corner map`) + ' for the big map, then tap a place to drop a marker the arrow will point to.' },
   { id: 'daily', when: (c) => c.t > 70 && !c.job && !c.heat, skip: () => false,
     text: (c) => 'There is a new daily challenge every day, with a bigger reward for days in a row. See it in the menu.' },
   { id: 'nitro', when: (c) => c.cash >= 4000 && !c.nitro && !c.job, skip: () => false,

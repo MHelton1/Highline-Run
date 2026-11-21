@@ -1,0 +1,16 @@
+<!doctype html><html><body style="margin:0;background:transparent">
+<!-- The app icon, drawn here and saved as PNGs by offline/build-win.mjs: amber peaks over a road on the game's dark ink -->
+<canvas id="c" width="256" height="256"></canvas>
+<script>
+const c = document.getElementById('c'), x = c.getContext('2d'), S = 256;
+const r = 52; x.beginPath(); x.moveTo(r, 0); x.arcTo(S, 0, S, S, r); x.arcTo(S, S, 0, S, r); x.arcTo(0, S, 0, 0, r); x.arcTo(0, 0, S, 0, r); x.closePath();
+const sky = x.createLinearGradient(0, 0, 0, S); sky.addColorStop(0, '#24384f'); sky.addColorStop(1, '#0e1114'); x.fillStyle = sky; x.fill(); x.save(); x.clip();
+x.fillStyle = '#9cc4e8'; x.globalAlpha = 0.35; x.beginPath(); x.moveTo(0, 170); x.lineTo(60, 112); x.lineTo(104, 150); x.lineTo(150, 96); x.lineTo(256, 178); x.lineTo(256, 256); x.lineTo(0, 256); x.fill(); x.globalAlpha = 1;
+x.fillStyle = '#f2b33d'; x.beginPath(); x.moveTo(-10, 214); x.lineTo(92, 70); x.lineTo(128, 120); x.lineTo(168, 58); x.lineTo(270, 214); x.closePath(); x.fill();
+x.fillStyle = '#f3efe4'; x.beginPath(); x.moveTo(92, 70); x.lineTo(110, 95); x.lineTo(96, 92); x.lineTo(84, 101); x.lineTo(76, 93); x.closePath(); x.fill();
+x.beginPath(); x.moveTo(168, 58); x.lineTo(190, 92); x.lineTo(175, 86); x.lineTo(163, 97); x.lineTo(150, 86); x.closePath(); x.fill();
+x.fillStyle = '#0e1114'; x.fillRect(0, 200, 256, 56);
+x.strokeStyle = '#2b3036'; x.lineWidth = 46; x.beginPath(); x.moveTo(40, 270); x.bezierCurveTo(90, 200, 180, 230, 230, 160); x.stroke();
+x.strokeStyle = '#f3efe4'; x.lineWidth = 5; x.setLineDash([16, 12]); x.beginPath(); x.moveTo(40, 270); x.bezierCurveTo(90, 200, 180, 230, 230, 160); x.stroke();
+x.restore();
+</script></body></html>

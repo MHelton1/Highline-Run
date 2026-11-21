@@ -13,5 +13,8 @@
     "esbuild": "^0.28.2",
     "three": "^0.187.0"
   },
-  "type": "module"
+  "type": "module",
+  "devDependencies": {
+    "resedit": "^2.0.3"
+  }
 }

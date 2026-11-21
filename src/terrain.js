@@ -337,6 +337,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       outerSites.push({ name, x, z, wild: false, hutX, hutZ, yaw: f.yaw, outer: true });
     });
     places.outerTown = { idx: flattest(loop, 0.6, 60) };
+    places.lines.outer = { road: ri, idx: flattest(loop, 0.32, 30) };   // start and finish of the outer loop's race
   }
   // pull-in where the off-road time trial starts (its checkpoints are chosen further down, once the ground is shaped)
   {
@@ -666,12 +667,29 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   { const t = places.trial; t.y = world.sample(t.x, t.z); for (const g of t.gates) g.y = world.sample(g.x, g.z); }
   // a bridge deck counts as easy, reachable ground for routes (the water or valley under it is a wall)
   for (const bb of world.bridges) { const road = roads[bb.road]; for (let i = bb.i0; i <= bb.i1; i++) { const c = rcell(road.x[i], road.z[i]); steepR[c] = Math.min(steepR[c], 0.05); reach[c] = 1; } }
+  // where another road joins a bridge (a spoke meeting the outer loop out at sea), the railing on that side is left
+  // open: b.open[side][i - i0] is 1 there (side 0 is the left edge, 1 the right), for the walls drawn and the stops
+  for (const b of world.bridges) {
+    const road = roads[b.road]; let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (let i = b.i0; i <= b.i1; i++) { x0 = Math.min(x0, road.x[i]); x1 = Math.max(x1, road.x[i]); z0 = Math.min(z0, road.z[i]); z1 = Math.max(z1, road.z[i]); }
+    const near = [];
+    roads.forEach((q, r) => { if (r === b.road) return; const a = q.closed ? 0 : q.from ?? 0, e = q.closed ? q.n - 1 : q.to ?? q.n - 1;
+      for (let i = a; i <= e; i++) if (q.x[i] > x0 - 25 && q.x[i] < x1 + 25 && q.z[i] > z0 - 25 && q.z[i] < z1 + 25) near.push(q.x[i], q.z[i], q.hw + 1.5); });
+    b.open = [new Uint8Array(b.i1 - b.i0 + 1), new Uint8Array(b.i1 - b.i0 + 1)];
+    if (!near.length) continue;
+    for (let i = b.i0; i <= b.i1; i++) {
+      const f = frame(road, i);
+      [1, -1].forEach((sg, side) => { const x = f.x + f.lx * sg * (road.hw + 1), z = f.z + f.lz * sg * (road.hw + 1);
+        for (let k = 0; k < near.length; k += 3) if (Math.hypot(near[k] - x, near[k + 1] - z) < near[k + 2]) { b.open[side][i - b.i0] = 1; break; } });
+    }
+    for (const o of b.open) { const c = o.slice(); for (let k = 0; k < o.length; k++) if (c[k]) for (let d = -3; d <= 3; d++) if (k + d >= 0 && k + d < o.length) o[k + d] = 1; }   // a little wider than the road itself
+  }
   // bridge railings: a row of overlapping round stops just outside each edge, solid only at deck height
   for (const b of world.bridges) {
     const road = roads[b.road];
     for (let i = b.i0; i <= b.i1; i++) {
       const f = frame(road, i);
-      for (const sg of [-1, 1]) { const t = world.addCollider(f.x + f.lx * sg * (road.hw + 2.0), f.z + f.lz * sg * (road.hw + 2.0), 2.1); t.y = f.h; t.lo = f.h - 3; }
+      [1, -1].forEach((sg, side) => { if (b.open[side][i - b.i0]) return; const t = world.addCollider(f.x + f.lx * sg * (road.hw + 2.0), f.z + f.lz * sg * (road.hw + 2.0), 2.1); t.y = f.h; t.lo = f.h - 3; });
     }
   }
   // ---- towns: houses and shops along the ring road either side of each garage, on whatever ground is there (each

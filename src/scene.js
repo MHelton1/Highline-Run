@@ -406,7 +406,8 @@ export function buildBridges(world, scene) {
       // deck body: left side, bottom, right side
       deck.push(...L(hw + 1.25, -0.85), ...L(hw + 1.25, -1.7), ...L(-hw - 1.25, -1.7), ...L(-hw - 1.25, -0.85));
       // walls: outer face, top, inner face, for each side
-      for (const sg of [1, -1]) wall.push(...L(sg * (hw + 1.25), -0.9), ...L(sg * (hw + 1.25), 0.85), ...L(sg * (hw + 0.85), 0.85), ...L(sg * (hw + 0.85), -0.1));
+      // (where another road joins, that side's wall drops into the deck)
+      [1, -1].forEach((sg, side) => { const top = b.open && b.open[side][k] ? -0.95 : 0.85; wall.push(...L(sg * (hw + 1.25), -0.9), ...L(sg * (hw + 1.25), top), ...L(sg * (hw + 0.85), top), ...L(sg * (hw + 0.85), Math.min(top, -0.1))); });
       if (i < b.i1) {
         const d0 = k * 4; for (let s = 0; s < 3; s++) dIdx.push(d0 + s, d0 + s + 1, d0 + s + 4, d0 + s + 1, d0 + s + 5, d0 + s + 4);
         const w0 = k * 8; for (const o of [0, 4]) for (let s = 0; s < 3; s++) wIdx.push(w0 + o + s, w0 + o + s + 1, w0 + o + s + 8, w0 + o + s + 1, w0 + o + s + 9, w0 + o + s + 8);
@@ -622,6 +623,7 @@ export function buildLines(world, scene, races) {
   arch(L.ring.x, L.ring.y, L.ring.z, L.ring.yaw, L.ring.hw + 1.7, name('ring'), '#5b3fa8', L.ring.hw);
   arch(L.dashStart.x, L.dashStart.y, L.dashStart.z, L.dashStart.yaw, L.dashStart.hw + 1.7, name('dash') + ' START · ' + name('descent') + ' FINISH', '#5b3fa8', L.dashStart.hw);
   arch(L.dashEnd.x, L.dashEnd.y, L.dashEnd.z, L.dashEnd.yaw, L.dashEnd.hw + 1.7, name('dash') + ' FINISH · ' + name('descent') + ' START', '#5b3fa8', L.dashEnd.hw);
+  if (L.outer && races.some((r) => r.base === 'outer')) arch(L.outer.x, L.outer.y, L.outer.z, L.outer.yaw, L.outer.hw + 1.7, name('outer'), '#5b3fa8', L.outer.hw);
   // the time trial's board stands at the back of its pull-in, clear of where the car waits
   b.origin(T.x - Math.sin(T.yaw) * 9, T.y, T.z - Math.cos(T.yaw) * 9, T.yaw);
   for (const sx of [1, -1]) b.box(0.3, 4.2, 0.3, post, sx * 3.6, 2.1, 0);

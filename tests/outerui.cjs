@@ -23,6 +23,16 @@ const OUT = process.argv[2] || path.join(__dirname, 'shots'), R = process.env.RE
   const mm = await p.evaluate(() => { const g = window.__game; return { x: g.car.pos.x, z: g.car.pos.z }; });
   console.log('drawn', JSON.stringify(d1), JSON.stringify(d2));
   if (R === 'coast') await shot('bridge', () => { const g = window.__game, w = g.world, b = w.bridges.filter((q) => w.roads[q.road].outer).sort((a, q) => (q.i1 - q.i0) - (a.i1 - a.i0))[0], r = w.roads[b.road], f = w.frame(r, Math.max(0, b.i0 - 25)); g.car.place(f.x, f.z, f.yaw, 0.3); g.advance(0.6); });
+  // the outer loop's race: a start zone, its arch (picture), the offer card, and a race that starts and runs
+  await shot('start', () => { const g = window.__game, w = g.world, L = w.places.lines.outer, r = w.roads[L.road], f = w.frame(r, (L.idx - 22 + r.n) % r.n); g.car.place(f.x, f.z, f.yaw, 0.3); g.advance(0.6); });
+  const race = await p.evaluate(async () => {
+    const g = window.__game, z = g.zones.find((q) => q.kind === 'race' && q.def.base === 'outer'); if (!z) return { zone: false };
+    g.openOffer(z.def); const card = document.getElementById('dialog') ? document.getElementById('dialog').textContent.slice(0, 160) : '';
+    g.startRace(z.def, 1); g.advance(6, { steer: 0, throttle: 1, brake: 0, handbrake: false, analog: true });
+    const r = g.race;
+    return { zone: true, label: z.label, name: z.def.name, card, mode: g.mode, state: r && r.state, speed: r ? +g.car.speed.toFixed(1) : 0, gates: z.def.gates.length, miles: +(z.def.dist / 1609).toFixed(1) };
+  });
+  check('loop race', race.zone && race.miles > 5 && race.gates === 16 && race.mode === 'race' && race.state === 'run' && race.speed > 5, race);
   await p.keyboard.press('KeyG'); await p.waitForTimeout(900); await p.screenshot({ path: path.join(OUT, `outer-${R}-map.png`) }); await p.keyboard.press('KeyG');
   check('far town', Math.hypot(mm.x, mm.z) > 1300, mm);
   check('errors', errs.length === 0, errs.slice(0, 5));

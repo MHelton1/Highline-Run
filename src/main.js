@@ -249,7 +249,7 @@ function start(hot) {
   // places where stopping opens something: garages (blue) and race starts (violet)
   const zones = [
     ...garages.map((g) => ({ kind: 'garage', g, x: g.x, z: g.z, y: g.y, r: 7, label: 'Open the garage', beam: beam(0x4f9dff, 7) })),
-    ...Object.entries(spotsFor(world.region)).map(([spot, label]) => { const group = races.filter((d) => d.spot === spot), def = group[0]; return { kind: 'race', def, group, x: def.x, z: def.z, y: def.y, r: 8, label, beam: beam(0xa283ff, 8) }; }),
+    ...Object.entries(spotsFor(world.region)).filter(([spot]) => races.some((d) => d.spot === spot)).map(([spot, label]) => { const group = races.filter((d) => d.spot === spot), def = group[0]; return { kind: 'race', def, group, x: def.x, z: def.z, y: def.y, r: 8, label, beam: beam(0xa283ff, 8) }; }),
   ];
   for (const z of zones) z.beam.position.set(z.x, z.y, z.z);
   // free-roam scoring: speed trap cameras on the fast stretches, and a drift meter
@@ -975,7 +975,7 @@ function start(hot) {
       } else seaT = 0;
       if ((townT -= dt) <= 0 && world.towns.length) {   // a town's name as you drive into it
         townT = 0.5; const t = world.townAt(car.pos.x, car.pos.z);
-        if (t && t !== inTown && mode === 'roam') toast('Entering ' + t.name, 2.2);
+        if (t && t !== inTown && mode === 'roam') { toast('Entering ' + t.name, 2.2); if (mark(S(), world.region, 't', world.towns.indexOf(t))) store.commit(); }
         inTown = t;
       }
       if (S().kid) {                  // kid mode puts the car back on its wheels, and back on the road when it is stuck

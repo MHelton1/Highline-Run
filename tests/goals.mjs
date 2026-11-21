@@ -1,16 +1,16 @@
 // Goals: counting, paying each reward once, the region prize paint, and that a damaged save cannot fake progress.
 import assert from 'node:assert/strict';
 import { freshSave, cleanSave } from '../src/save.js';
-import { regionGoals, garageGoals, allGoals, claimGoals, bump, best, mark, paintLocked, regionComplete, REGION_PAINT } from '../src/goals.js';
+import { regionGoals, garageGoals, allGoals, claimGoals, bump, best, mark, paintLocked, regionComplete, isDone, REGION_PAINT } from '../src/goals.js';
 import { REGION_IDS } from '../src/regions.js';
 import { eventsFor } from '../src/race.js';
 import { PAINTS, buildSpec, stockTune } from '../src/cars.js';
 
 const s = freshSave();
-assert.equal(allGoals(s).length, REGION_IDS.length * 18 + 6);
+assert.equal(allGoals(s).length, REGION_IDS.length * 20 + 6);
 assert.equal(claimGoals(s).got.length, 0, 'nothing is done in a fresh save');
-for (const r of REGION_IDS) assert.equal(eventsFor(r).length, 6);
-assert.deepEqual(eventsFor('coast').map((e) => e.id), ['coast', 'coastb', 'coastx', 'ridge', 'ridgeb', 'cliffs']);
+for (const r of REGION_IDS) assert.equal(eventsFor(r).length, 7);
+assert.deepEqual(eventsFor('coast').map((e) => e.id), ['coast', 'coastb', 'coastx', 'ridge', 'ridgeb', 'cliffs', 'island']);
 
 // three deliveries in the desert pay the first goal once, in the desert only
 for (let i = 0; i < 3; i++) bump(s, 'desert', 'd');
@@ -50,6 +50,10 @@ assert.deepEqual(c.got.map((q) => q.id), ['desert.cup']);
 assert.deepEqual(c.finished, ['desert']); assert.equal(regionComplete(s, 'desert'), true);
 assert.equal(paintLocked(s, REGION_PAINT.desert), false); assert.equal(paintLocked(s, REGION_PAINT.coast), true);
 assert.equal(PAINTS[REGION_PAINT.desert].prize, 'desert');
+// the goals added with the bigger maps (the loop race, won above, and the towns) are not needed for the paint
+assert.equal(isDone(s, 'desert.loop'), true); assert.equal(regionGoals(s, 'desert').find((q) => q.id === 'desert.towns').have, 0);
+for (const i of [0, 1]) mark(s, 'desert', 't', i); assert.equal(claimGoals(s).got.length, 0);
+mark(s, 'desert', 't', 2); c = claimGoals(s); assert.deepEqual(c.got.map((q) => q.id), ['desert.towns']); assert.deepEqual(c.finished, [], 'the paint news is not repeated');
 const desertPay = regionGoals(s, 'desert').reduce((a, q) => a + q.pay, 0);
 assert.equal(s.cash, desertPay, 'every desert reward paid exactly once');
 

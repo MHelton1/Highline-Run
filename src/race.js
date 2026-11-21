@@ -3,6 +3,7 @@
 import { Vehicle, collideCars } from './vehicle.js';
 import { buildSpec } from './cars.js';
 import { makePath, Driver, Tracker } from './ai.js';
+import { REGIONS } from './regions.js';
 
 const HOLD = { steer: 0, throttle: 0, brake: 0, handbrake: true, analog: true };   // no foot brake: holding it at a standstill selects reverse
 const COOL = { steer: 0, throttle: 0, brake: 0.45, handbrake: false, analog: true };
@@ -50,16 +51,35 @@ const REGION_EVENTS = {
 // the six events of a region by id, name and kind, without building the world (for the goals list)
 const BASE_EVENTS = [['ring', 'Ring Road Grand Prix', 'circuit'], ['clock', 'Ring Road Clockwise', 'circuit'], ['double', 'Ring Road Double', 'circuit'],
   ['dash', 'Summit Dash', 'sprint'], ['descent', 'Summit Return', 'sprint'], ['scramble', 'Backcountry Scramble', 'trial']];
-export const eventsFor = (region) => BASE_EVENTS.map(([id, name, kind]) => { const o = (REGION_EVENTS[region] || {})[id] || {}; return { base: id, id: o.id || id, name: o.name || name, kind }; });
-export const spotsFor = (region) => (REGION_EVENTS[region] && REGION_EVENTS[region].spots) || SPOTS;
+// bigger maps (build 33): a seventh event, one long lap of each region's outer loop road, with its own start arch
+const OUTER_IDS = { mountain: 'timber', desert: 'frontier', coast: 'island' };
+const outerOf = (region) => REGIONS[region] && REGIONS[region].outer;
+export const eventsFor = (region) => [...BASE_EVENTS.map(([id, name, kind]) => { const o = (REGION_EVENTS[region] || {})[id] || {}; return { base: id, id: o.id || id, name: o.name || name, kind }; }),
+  ...(outerOf(region) ? [{ base: 'outer', id: OUTER_IDS[region] || 'outer', name: outerOf(region).name + ' Grand Prix', kind: 'circuit' }] : [])];
+export const spotsFor = (region) => { const o = outerOf(region), base = (REGION_EVENTS[region] && REGION_EVENTS[region].spots) || SPOTS; return o ? { ...base, outer: o.name + ' races' } : base; };
 
 export function buildRaces(world) {
   const list = mountainRaces(world).map((d) => ({ ...d, base: d.id })), over = REGION_EVENTS[world.region];
-  if (!over) return list;
-  return list.map((d) => {
+  const all = !over ? list : list.map((d) => {
     const o = over[d.id] || {}, rivals = o.rivals ? d.rivals.map((r, k) => ({ ...r, ...o.rivals[k] })) : d.rivals;
     return { ...d, ...o, rivals, short: o.short || d.short, base: d.id };
   });
+  const outer = outerRace(world);
+  return outer ? [...all, outer] : all;
+}
+
+// one lap of the outer loop: long (about seven miles), mostly tarmac, out past the third town and the far pickups
+function outerRace(world) {
+  const L = world.places.lines.outer, o = outerOf(world.region); if (!L || !o) return null;
+  const road = world.roads[L.road], path = makePath(road), start = path.of(L.idx);
+  const gates = Array.from({ length: 16 }, (_, k) => { const f = path.at(start + Math.round(path.n * (k + 1) / 16)); return { x: f.x, z: f.z, y: f.y, idx: f.i, r: 15, prog: Math.round(path.n * (k + 1) / 16) * path.ds }; });
+  const isles = world.region === 'coast';
+  return { id: OUTER_IDS[world.region] || 'outer', base: 'outer', spot: 'outer', name: o.name + ' Grand Prix', short: o.name, kind: 'circuit', tag: 'Circuit · tarmac · long',
+    blurb: isles ? `One long lap of the ${o.name}, island to island over the bridges, against three rivals. Over seven miles, so a tidy lap beats a wild one.`
+      : `One long lap of the ${o.name}, out past the far pickups and ${world.towns[2] ? world.towns[2].name : 'the third town'}, against three rivals. Over seven miles, so a tidy lap beats a wild one.`,
+    x: L.x, z: L.z, y: L.y, path, startIdx: start, laps: 1, gates, dist: path.len,
+    rivals: [{ num: 19, car: 'coupe', skill: 0.6, vcap: 39, paint: 3 }, { num: 4, car: 'hatch', skill: 0.64, vcap: 37.5, paint: 6 }, { num: 66, car: 'truck', skill: 0.62, vcap: 36, paint: 1 }],
+    prize: [3000, 1500, 750, 200] };
 }
 
 function mountainRaces(world) {

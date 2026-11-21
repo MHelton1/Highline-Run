@@ -183,6 +183,12 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   old square (same draws), a second seeded pass fills the new ground. `buildTerrain` draws blocks with every point,
   every second point past 650 m and every fourth past 1625 m (skirts hide the joins). Corner map is a 3300 m window
   that follows the car. `laps.mjs` uses `{ towns: false, outer: false }`. Tests: `tests/outerui.cjs [outdir]`.
+- Outer loop race (build 33): `places.lines.outer` (flattest spot near 0.32 of the loop) is the start of a seventh
+  event, base `outer` (ids timber, frontier, island), one 16-gate lap of about seven miles with its own arch and start
+  zone (`spotsFor` adds an `outer` spot). Two goals per region came with it, marked `extra` so a region's paint prize
+  does not depend on them: win that race, and drive through all three towns (stat `t`, one bit per town, set by the
+  "Entering ..." toast). Bridges leave their railing open where another road joins (`bridge.open[side][i]`), for the
+  stops and the walls drawn. `races.mjs outer` runs the robots round it.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

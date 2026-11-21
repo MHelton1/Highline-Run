@@ -23,8 +23,9 @@ const bestRank = (s, id, keys = levelKeys) => { let b = 0; for (const k of keys)
 // every goal for a region, with how far along the save is: { id, group, name, need, have, pay }
 export function regionGoals(s, region) {
   const st = (s.stats && s.stats[region]) || {}, n = (k) => st[k] || 0, ev = eventsFor(region);
-  const trial = ev.find((e) => e.kind === 'trial'), road = ev.filter((e) => e.kind !== 'trial');
-  const wins = ev.filter((e) => bestRank(s, e.id) === 1).length, finished = ev.filter((e) => bestRank(s, e.id) > 0).length;
+  const trial = ev.find((e) => e.kind === 'trial'), road = ev.filter((e) => e.kind !== 'trial'), loop = ev.find((e) => e.base === 'outer'), six = ev.filter((e) => e.base !== 'outer');
+  const towns = (REGIONS[region] && REGIONS[region].towns) || [];
+  const wins = ev.filter((e) => bestRank(s, e.id) === 1).length;
   const hard = road.some((e) => s.rank[e.id + LEVELS[2].key] === 1) ? 1 : 0;
   const g = (id, name, need, have, pay) => ({ id: region + '.' + id, group: region, name, need, have: Math.min(need, have), pay });
   return [
@@ -38,7 +39,7 @@ export function regionGoals(s, region) {
     g('night', 'Make a delivery at night', 1, n('n'), 1500),
     g('win3', 'Win 3 different races', 3, wins, 3000),
     g('gold', `Gold medal in the ${trial.name}`, 1, bestRank(s, trial.id) === 1 ? 1 : 0, 2000),
-    g('all', 'Finish all six races', 6, finished, 2500),
+    g('all', 'Finish all six races', 6, six.filter((e) => bestRank(s, e.id) > 0).length, 2500),
     g('hard', 'Win a race on Hard', 1, hard, 4000),
     g('crates', `Find all ${CRATES} hidden crates`, CRATES, popcount(n('k')), 3000),
     g('barn', 'Find the hidden car', 1, s.cars[BARN_CAR[region]] ? 1 : 0, 2500),
@@ -46,6 +47,8 @@ export function regionGoals(s, region) {
     g('drift', `Score ${DRIFT_GOAL.toLocaleString('en-US')} in one drift`, 1, n('f') >= DRIFT_GOAL ? 1 : 0, 1500),
     g('traps', `Pass all ${TRAPS} speed traps at ${TRAP_GOAL_MPH} mph or more`, TRAPS, [0, 1, 2].filter((i) => n('s' + i) >= TRAP_GOAL_MPH).length, 2000),
     g('cup', `Win the ${CUP_NAME[region] || 'cup'}`, 1, s.cups && s.cups[region] === 1 ? 1 : 0, 5000),
+    ...(loop ? [{ ...g('loop', `Win the ${loop.name}`, 1, bestRank(s, loop.id) === 1 ? 1 : 0, 3000), extra: true }] : []),
+    ...(towns.length ? [{ ...g('towns', `Drive through all ${towns.length} towns`, towns.length, popcount(n('t')), 1000), extra: true }] : []),
   ];
 }
 
@@ -65,7 +68,8 @@ export function garageGoals(s) {
 
 export const allGoals = (s) => [...REGION_IDS.flatMap((r) => regionGoals(s, r)), ...garageGoals(s)];
 export const isDone = (s, id) => !!(s.done && s.done.includes(id));
-export const regionComplete = (s, region) => regionGoals(s, region).every((q) => isDone(s, q.id));
+// (the goals added with the bigger maps are `extra`: a region's paint prize, once won, stays won)
+export const regionComplete = (s, region) => regionGoals(s, region).every((q) => q.extra || isDone(s, q.id));
 // a paint is free to use unless it is a region's prize that has not been won yet
 export const paintLocked = (s, i) => { const r = Object.keys(REGION_PAINT).find((k) => REGION_PAINT[k] === i); return !!r && !regionComplete(s, r); };
 
@@ -73,7 +77,7 @@ export const paintLocked = (s, i) => { const r = Object.keys(REGION_PAINT).find(
 export function claimGoals(s) {
   const got = [], fin = [];
   for (const q of allGoals(s)) if (q.have >= q.need && !isDone(s, q.id)) { s.done.push(q.id); s.cash += q.pay; got.push(q); }
-  for (const r of REGION_IDS) if (got.some((q) => q.group === r) && regionComplete(s, r)) fin.push(r);
+  for (const r of REGION_IDS) if (got.some((q) => q.group === r && !q.extra) && regionComplete(s, r)) fin.push(r);
   return { got, finished: fin };
 }
 

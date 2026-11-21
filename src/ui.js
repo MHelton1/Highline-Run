@@ -282,7 +282,7 @@ export function createUI(g) {
       el('span', { class: 'lbl' }, 'Menu'), el('h2', { id: 'dlg-title' }, 'Goals'),
       el('p', { class: 'note' }, 'Each goal pays once. Finish every goal in a region to unlock its own paint in the garage.'),
       el('div', { class: 'actions' }, el('button', { id: 'dlg-back', type: 'button', class: 'btn primary', onclick: () => pause() }, 'Back to the menu')),
-      order.map((r) => group(REGIONS[r].name + (r === here ? ' (here)' : ''), regionComplete(s, r) ? `All done. ${PAINTS[REGION_PAINT[r]].name} paint unlocked.` : `Prize: ${PAINTS[REGION_PAINT[r]].name} paint.`,
+      order.map((r) => group(REGIONS[r].name + (r === here ? ' (here)' : ''), regionComplete(s, r) ? `${regionGoals(s, r).every((q) => isDone(s, q.id)) ? 'All done. ' : ''}${PAINTS[REGION_PAINT[r]].name} paint unlocked.` : `Prize: ${PAINTS[REGION_PAINT[r]].name} paint.`,
         regionGoals(s, r).map((q) => { const k = q.id.split('.')[1], h = r === here ? g.findHints() : null; return h && h[k] ? { ...q, hint: h[k] } : q; }))),
       group('Garage', null, garageGoals(s)),
     ], () => pause());

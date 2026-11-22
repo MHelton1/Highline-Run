@@ -110,6 +110,8 @@ Pictures for judging the look (not pass or fail):
     node tests/riversui.cjs [outdir]  # coast rivers: driving over both bridges, the railings, a splash in a river, pictures
     REGION=coast node tests/townsui.cjs [outdir]  # towns: name on entry, solid buildings, pictures by day, night and map
     REGION=coast node tests/outerui.cjs [outdir]  # bigger map: outer loop, spokes, third town, sizes and pictures
+    REGION=coast node tests/traffic.mjs   # traffic: fills in, keeps its lane and speed, slows in towns, queues behind a parked car
+    REGION=coast node tests/trafficui.cjs [outdir]  # traffic in the page: drawn, off in races, the menu switch, pictures
     node tests/garage8.cjs [outdir]  # garage with every car on an upright and a sideways phone (pictures)
     node tests/carshots.cjs [ids] [six|one|two|side|rear|top]  # the car models alone on a pad (bundles tests/viewer/entry.js)
 
@@ -189,6 +191,14 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   does not depend on them: win that race, and drive through all three towns (stat `t`, one bit per town, set by the
   "Entering ..." toast). Bridges leave their railing open where another road joins (`bridge.open[side][i]`), for the
   stops and the walls drawn. `races.mjs outer` runs the robots round it.
+- Traffic (build 34): `src/traffic.js`. `Traffic` keeps up to `TRAFFIC.n` (phones `nTouch`) ordinary cars on the
+  closed tarmac roads (ring road, outer loop) in both directions, right of the centre line. Each is a real `Vehicle`
+  driven by a `Commuter` (a `Driver` that holds its lane, keeps about a 1.5 s gap to anything ahead in it, never
+  overtakes, and slows to `vTown` within 260 m of a town on its road). Cars appear 170 to 460 m along the road from the
+  player (at least 150 m away in a straight line, 40 m from any car) and go past 600 m, or once wrecked out of sight.
+  `main.js` steps them with the player in free roam and the garage (knocks hurt cargo like patrol contact), clears
+  them for races and two players, draws them within 340 m (phones 260 m) from a pool of models, and shows grey dots on
+  the corner map. Menu switch "Traffic on/off" is saved as `traffic`. Tests: `tests/traffic.mjs`, `tests/trafficui.cjs`.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

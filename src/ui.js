@@ -202,11 +202,11 @@ export function createUI(g) {
     const head = road ? PLACES[res.pos - 1] + ' place' : res.medal >= 0 ? MEDALS[res.medal] + ' medal' : 'No medal this time';
     const table = road ? el('dl', { class: 'rows', id: 'dlg-table' }) : el('dl', { class: 'rows' }, times.map((t, i) => [el('dt', { class: 'n' + (i === res.medal ? ' you' : '') }, MEDALS[i]), el('dd', { class: i === res.medal ? 'you' : null }, 'Under ' + clock(t)), el('dd', { class: 'pay' }, money(pay[i]))]));
     card('results', [
-      el('span', { class: 'lbl' }, def.name + ' · ' + LEVELS[lv].name), el('h2', { id: 'dlg-title', class: (road ? res.pos === 1 : res.medal === 0) ? 'win' : null }, head),
-      el('div', { class: 'facts' }, fact('Your time', clock(res.time)), note.best ? fact('Best', 'New best time', 'good') : note.prev ? fact('Best', clock(note.prev)) : null, fact('Prize', res.prize ? '+' + money(res.prize) : 'None', res.prize ? 'good' : null)),
+      el('span', { class: 'lbl' }, def.name + ' · ' + (def.school ? 'Driving test' : LEVELS[lv].name)), el('h2', { id: 'dlg-title', class: (road ? res.pos === 1 : res.medal === 0) ? 'win' : null }, head),
+      el('div', { class: 'facts' }, fact('Your time', clock(res.time)), note.best ? fact('Best', 'New best time', 'good') : note.prev ? fact('Best', clock(note.prev)) : null, fact('Prize', res.prize ? '+' + money(res.prize) : def.school && res.medal >= 0 ? 'Paid before' : 'None', res.prize ? 'good' : null)),
       table,
       note.ghost && el('p', { class: 'note', id: 'dlg-ghostnote' }, note.ghost),
-      !road && res.medal < 0 && el('p', { class: 'note' }, `Bronze needs ${clock(times[2])} or better. A car with more ground clearance and a tidier line between checkpoints both help.`),
+      !road && res.medal < 0 && el('p', { class: 'note' }, def.school ? `Bronze needs ${clock(times[2])} or better. Everyone takes the tests in the same school car, so it is all in the driving.` : `Bronze needs ${clock(times[2])} or better. A car with more ground clearance and a tidier line between checkpoints both help.`),
       note.cup && cupResult(note.cup),
       note.cup && !note.cup.over ? el('div', { class: 'actions' }, el('button', { id: 'dlg-go', type: 'button', class: 'btn primary', onclick: () => g.nextCupRound() }, `Round ${note.cup.round + 1}: ${note.cup.next}`), el('button', { id: 'dlg-later', type: 'button', class: 'btn', onclick: () => g.raceDone() }, 'Later'))
         : note.cup ? el('div', { class: 'actions' }, el('button', { id: 'dlg-go', type: 'button', class: 'btn primary', onclick: () => g.raceDone() }, 'Continue'))
@@ -246,6 +246,7 @@ export function createUI(g) {
         el('button', { id: 'dlg-traffic', type: 'button', class: 'btn', 'aria-pressed': String(!!g.trafficOn()), onclick: () => { g.toggleTraffic(); pause(); focusOn($('dlg-traffic')); } }, 'Traffic ' + (g.trafficOn() ? 'on' : 'off')),
         el('button', { id: 'dlg-photo', type: 'button', class: 'btn', onclick: () => g.photo() }, 'Photo mode'),
         el('button', { id: 'dlg-goals', type: 'button', class: 'btn', onclick: () => goals() }, `Goals ${opt.goals.done}/${opt.goals.all}`),
+        !racing && el('button', { id: 'dlg-school', type: 'button', class: 'btn', onclick: () => school() }, 'Driving tests'),
         el('button', { id: 'dlg-kid', type: 'button', class: 'btn' + (opt.kid ? ' on' : ''), 'aria-pressed': String(!!opt.kid), onclick: () => { g.toggleKid(); pause(); focusOn($('dlg-kid')); } }, 'Kid mode ' + (opt.kid ? 'on' : 'off')),
         el('button', { id: 'dlg-units', type: 'button', class: 'btn', onclick: () => { g.toggleUnits(); pause(); focusOn($('dlg-units')); } }, 'Speed in ' + (opt.metric ? 'km/h' : 'mph')),
         opt.touch && el('button', { id: 'dlg-tilt', type: 'button', class: 'btn' + (opt.tilt ? ' on' : ''), 'aria-pressed': String(!!opt.tilt), onclick: () => { g.toggleTilt(); } }, 'Steering: ' + (opt.tilt ? 'tilt' : 'buttons')),
@@ -270,6 +271,20 @@ export function createUI(g) {
   }
 
   // ---------- goals: this region first, then the others, then the garage ----------
+  // driving tests: five per region, each with its medal times, your best and medal, and a button to take it
+  function school() {
+    const s = S(), list = g.schoolTests(), got = list.filter((d) => s.rank[d.id] === 1).length;
+    card('school', [
+      el('span', { class: 'lbl' }, 'Menu'), el('h2', { id: 'dlg-title' }, 'Driving tests'),
+      el('p', { class: 'note' }, `Five short tests on this map's roads, all in the same yellow school car. A better medal pays the difference once: bronze ${money(500)}, silver ${money(1000)}, gold ${money(2000)} in all. Gold here: ${got} of ${list.length}.`),
+      el('ul', { class: 'goals school' }, list.map((d) => { const r = s.rank[d.id], best = s.best[d.id], md = medals(d, 1);
+        return el('li', { class: r === 1 ? 'done' : null, id: 'test-' + d.key },
+          el('span', { class: 'gname' }, d.name + (r ? ' · ' + MEDALS[r - 1] : '')),
+          el('button', { id: 'test-go-' + d.key, type: 'button', class: 'btn' + (r ? '' : ' primary'), onclick: () => g.startTest(d.id) }, r ? 'Again' : 'Take it'),
+          el('span', { class: 'ghint' }, d.blurb + ` Gold ${clock(md[0])}, silver ${clock(md[1])}, bronze ${clock(md[2])}.` + (best ? ` Your best ${clock(best)}.` : ''))); })),
+      el('div', { class: 'actions' }, el('button', { id: 'dlg-back', type: 'button', class: 'btn primary', onclick: () => pause() }, 'Back to the menu')),
+    ], () => pause());
+  }
   function goals() {
     const s = S(), here = g.region, order = [here, ...REGION_IDS.filter((r) => r !== here)];
     const row = (q) => { const done = isDone(s, q.id);

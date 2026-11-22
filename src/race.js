@@ -22,7 +22,7 @@ export const LEVELS = [
 export const KID_LEVEL = 3;
 export const rankKey = (id, level = 1) => id + LEVELS[level].key;
 export const prizes = (def, level = 1) => def.prize.map((p) => Math.round(p * LEVELS[level].prize / 50) * 50);
-export const medals = (def, level = 1) => def.medals.map((t) => Math.round(t * LEVELS[level].time));
+export const medals = (def, level = 1) => def.medals.map((t) => (def.school ? Math.round(t * LEVELS[level].time * 10) / 10 : Math.round(t * LEVELS[level].time)));   // driving tests: tenths
 
 // Where races start. Several events can share one start light.
 export const SPOTS = { ring: 'Ring Road races', west: 'Summit Dash', east: 'Summit Return', trial: 'Backcountry Scramble' };
@@ -161,7 +161,7 @@ export class Race {
     if (this.state !== 'run') return;
     this.t = this.clock;
     const g = this.gates[this.gate], p = this.player.pos;
-    if ((p.x - g.x) ** 2 + (p.z - g.z) ** 2 < g.r * g.r) {
+    if ((p.x - g.x) ** 2 + (p.z - g.z) ** 2 < g.r * g.r && (!g.stop || this.player.speed < 0.6)) {   // a stop gate counts once the car is still in it
       if (this.track && g.idx != null) this.track.sync(g.idx, g.prog + this.lap * this.def.path.len);
       this.gate++;
       const lapDone = this.gate >= this.gates.length;

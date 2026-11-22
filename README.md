@@ -112,6 +112,8 @@ Pictures for judging the look (not pass or fail):
     REGION=coast node tests/outerui.cjs [outdir]  # bigger map: outer loop, spokes, third town, sizes and pictures
     REGION=coast node tests/traffic.mjs   # traffic: fills in, keeps its lane and speed, slows in towns, queues behind a parked car
     REGION=coast node tests/trafficui.cjs [outdir]  # traffic in the page: drawn, off in races, the menu switch, pictures
+    REGION=coast node tests/school.mjs [calibrate]  # driving tests: robot runs in the school car against the medal times
+    REGION=coast node tests/schoolui.cjs [outdir]  # driving tests in the page: list, school car, pay once, own car back
     node tests/garage8.cjs [outdir]  # garage with every car on an upright and a sideways phone (pictures)
     node tests/carshots.cjs [ids] [six|one|two|side|rear|top]  # the car models alone on a pad (bundles tests/viewer/entry.js)
 
@@ -199,6 +201,14 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   `main.js` steps them with the player in free roam and the garage (knocks hurt cargo like patrol contact), clears
   them for races and two players, draws them within 340 m (phones 260 m) from a pool of models, and shows grey dots on
   the corner map. Menu switch "Traffic on/off" is saved as `traffic`. Tests: `tests/traffic.mjs`, `tests/trafficui.cjs`.
+- Driving tests (build 35): `src/school.js`. `buildTests(world)` finds each region's straightest flat 360 m of ring
+  road (Standing Start, 300 m; Stop Box, a 2.6 m `stop` gate 150 m on that only counts once the car is still), the next
+  straightest stretch well away from it (Slalom: seven 2.4 m gates offset 2.3 m left and right), the twistiest 500 m
+  (Bends) and 700 m of trail from the Summit Dash start (Gravel Run). They are time trials (`school: true`, level 1
+  always, medals in tenths) taken in the stock Rally Hatch painted Signal yellow (`schoolCar` in main.js swaps the
+  spec and model in and back). `SCHOOL_MEDALS` come from `node tests/school.mjs calibrate` (gold 3% over the best robot,
+  silver 14%, bronze 30%); rerun it after any change to the roads. A better medal pays the difference once
+  (`improvePay`), no daily challenge credit. Menu: "Driving tests". Tests: `tests/school.mjs`, `tests/schoolui.cjs`.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

@@ -25,7 +25,7 @@ const mode = process.argv[2] || 'port', OUT = process.argv[3] || path.join(__dir
     while (performance.now() - t0 < 60000 && !/Goal done/.test(seen)) { await new Promise((r) => setTimeout(r, 200)); seen = document.getElementById('toast').textContent; }
     return { paid: g.store.data.cash - cash0, toast: seen, stats: g.store.data.stats[g.world.region], done: g.store.data.done };
   });
-  check('delivery', r1.paid === 2000 && /Goal done: Deliver a Hot load\. \+\$1,500/.test(r1.toast) && r1.stats.d === 1 && r1.stats.h === 1 && r1.done.length === 1, r1);
+  check('delivery', (r1.paid === 2000 || r1.paid === 5000 /* plus the daily challenge, on a day it is a Hot load */) && /Goal done: Deliver a Hot load\. \+\$1,500/.test(r1.toast) && r1.stats.d === 1 && r1.stats.h === 1 && r1.done.length === 1, r1);
   await p.screenshot({ path: `${OUT}/goals-${mode}-toast.png` });
   // the Goals page
   await p.evaluate(() => window.__game.pause()); await p.waitForTimeout(300);

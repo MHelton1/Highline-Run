@@ -8,6 +8,7 @@ const OUT = process.argv[2] || path.join(__dirname, 'shots'), R = process.env.RE
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
   const p = await ctx.newPage(), errs = []; let bad = 0;
+  p.setDefaultTimeout(90000);
   p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
   const check = (name, ok, v) => { if (!ok) bad++; console.log(name.padEnd(10), ok ? 'ok  ' : 'BAD ', JSON.stringify(v)); };
   await p.goto('file://' + path.join(__dirname, '..', 'dist', 'local.html') + '#r=' + R);

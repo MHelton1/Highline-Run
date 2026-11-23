@@ -430,12 +430,32 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
         }
       }
     });
+    const cut = new Uint8Array(V * V);
     for (let v = 0; v < V * V; v++) {
       if (near[v] < 0) continue;
-      const rv = rivers[which[v]], s = near[v], d = Math.sqrt(d2[v]), w = rv.hw[s], e = d - w;
-      const tgt = e < 0 ? rv.wl[s] - 0.25 - rv.depth[s] * (1 - (d / w) ** 2) : rv.wl[s] - 0.25 + 2.8 * smooth(e / 9) + Math.max(0, e - 6) * 0.4;
-      if (tgt < heights[v]) { if (roadDist[v] < 14 && heights[v] - tgt > 1.5) under[v] = 1; heights[v] = tgt; }
-      if (e < 14) wetH[v] = rv.wl[s];
+      // distance to the river's line itself (the two segments either side of the nearest point), with its width,
+      // depth and water level taken part way along, so the banks run smoothly instead of in 4 m scallops
+      const rv = rivers[which[v]], s0 = near[v], x = (v % V) * CELL - HALF, z = ((v / V) | 0) * CELL - HALF;
+      let d = Math.sqrt(d2[v]), w = rv.hw[s0], wl = rv.wl[s0], dep = rv.depth[s0];
+      for (const a of [s0 - 1, s0]) {
+        const b = a + 1; if (a < 0 || b >= rv.n) continue;
+        const ex = rv.x[b] - rv.x[a], ez = rv.z[b] - rv.z[a], l2 = ex * ex + ez * ez || 1;
+        const t = Math.max(0, Math.min(1, ((x - rv.x[a]) * ex + (z - rv.z[a]) * ez) / l2)), dd = Math.hypot(x - rv.x[a] - ex * t, z - rv.z[a] - ez * t);
+        if (dd < d) { d = dd; w = rv.hw[a] + (rv.hw[b] - rv.hw[a]) * t; wl = rv.wl[a] + (rv.wl[b] - rv.wl[a]) * t; dep = rv.depth[a] + (rv.depth[b] - rv.depth[a]) * t; }
+      }
+      const e = d - w;
+      const tgt = e < 0 ? wl - 0.25 - dep * (1 - (d / w) ** 2) : wl - 0.25 + 2.8 * smooth(e / 9) + Math.max(0, e - 6) * 0.4;
+      if (tgt < heights[v]) { if (roadDist[v] < 14 && heights[v] - tgt > 1.5) under[v] = 1; heights[v] = tgt; cut[v] = 1; }
+      if (e < 14) wetH[v] = wl;
+    }
+    // soften what was cut (away from roads): two passes of a 3 x 3 average take out the last steps of the grid
+    for (let pass = 0; pass < 2; pass++) {
+      const h0 = heights.slice();
+      for (let j = 1; j < N; j++) for (let i = 1; i < N; i++) {
+        const v = j * V + i; if (!cut[v] || under[v] || roadDist[v] < 12) continue;
+        let sum = 0; for (let b = -1; b <= 1; b++) for (let a = -1; a <= 1; a++) sum += h0[v + b * V + a];
+        heights[v] = Math.min(h0[v] + 0.6, sum / 9);
+      }
     }
   }
   const wetV = (v) => wetH && wetH[v] > SEA ? wetH[v] : SEA;
@@ -582,7 +602,8 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   }
 
   // ground query: returns height, fills out.nx/ny/nz and out.surf
-  world.sample = function (x, z, out) {
+  // y (optional): the height asked from; more than 2 m under a bridge deck, the deck is ignored (driving under it)
+  world.sample = function (x, z, out, y) {
     let gx = (x + HALF) / CELL, gz = (z + HALF) / CELL;
     gx = gx < 0 ? 0 : gx > N - 1e-4 ? N - 1e-4 : gx; gz = gz < 0 ? 0 : gz > N - 1e-4 ? N - 1e-4 : gz;
     const i = gx | 0, j = gz | 0, fx = gx - i, fz = gz - j, v = j * V + i;
@@ -594,6 +615,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       if (s < 0) continue;
       const hw = roads[r].hw, d = projectRoad(roads[r], s, x, z);
       if (d >= hw + RAMP) continue;
+      if (y !== undefined && roads[r].deck && roads[r].deck[proj.i] && y < proj.h - 2.0) continue;
       const t = d <= hw || (roads[r].deck && roads[r].deck[proj.i]) ? 0 : (d - hw) / RAMP;   // a bridge deck stays flat out to its walls
       if (out) {
         let gx = proj.tx * proj.slope, gz = proj.tz * proj.slope;
@@ -662,7 +684,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   for (const key in places.lines) {
     const L = places.lines[key], road = roads[L.road], f = frame(road, L.idx);
     Object.assign(L, { x: f.x, z: f.z, y: f.h, yaw: f.yaw, hw: road.hw, f });
-    for (const sg of [-1, 1]) world.addCollider(f.x + f.lx * sg * (road.hw + 1.7), f.z + f.lz * sg * (road.hw + 1.7), 1.2);
+    for (const sg of [-1, 1]) world.addCollider(f.x + f.lx * sg * (road.hw + 1.7), f.z + f.lz * sg * (road.hw + 1.7), 0.45);
   }
   { const t = places.trial; t.y = world.sample(t.x, t.z); for (const g of t.gates) g.y = world.sample(g.x, g.z); }
   // a bridge deck counts as easy, reachable ground for routes (the water or valley under it is a wall)
@@ -684,12 +706,24 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     }
     for (const o of b.open) { const c = o.slice(); for (let k = 0; k < o.length; k++) if (c[k]) for (let d = -3; d <= 3; d++) if (k + d >= 0 && k + d < o.length) o[k + d] = 1; }   // a little wider than the road itself
   }
-  // bridge railings: a row of overlapping round stops just outside each edge, solid only at deck height
+  // bridge railings: a dense row of small round stops whose inner edge is the wall's inner face (hw + 0.85), solid
+  // only at deck height; piers (every 26 m where the ground is well below): solid from the ground to under the deck
+  world.piers = [];
   for (const b of world.bridges) {
     const road = roads[b.road];
     for (let i = b.i0; i <= b.i1; i++) {
-      const f = frame(road, i);
-      [1, -1].forEach((sg, side) => { if (b.open[side][i - b.i0]) return; const t = world.addCollider(f.x + f.lx * sg * (road.hw + 2.0), f.z + f.lz * sg * (road.hw + 2.0), 2.1); t.y = f.h; t.lo = f.h - 3; });
+      for (const half of [0, 0.5]) {
+        if (half && i === b.i1) continue;
+        const f = frame(road, i), g = half ? frame(road, i + 1) : f, fx = (f.x + g.x) / 2, fz = (f.z + g.z) / 2, fh = (f.h + g.h) / 2;
+        [1, -1].forEach((sg, side) => { if (b.open[side][i - b.i0] || (half && b.open[side][i + 1 - b.i0])) return; const t = world.addCollider(fx + f.lx * sg * (road.hw + 1.95), fz + f.lz * sg * (road.hw + 1.95), 1.1); t.y = fh; t.lo = fh - 3; });
+      }
+      const f = frame(road, i), drop = f.h - gridAt(f.x, f.z);
+      // where the deck is too low to drive under (the ends of the bridge), the space under it is solid
+      if ((i - b.i0) % 2 === 0 && drop > 0.8 && drop < 3.4) for (let k = -road.hw - 1; k <= road.hw + 1.01; k += 1.5) { const t = world.addCollider(f.x + f.lx * k, f.z + f.lz * k, 0.95); t.y = f.h - drop; t.hi = f.h - 2.0; }
+      if ((i - b.i0) % 13 === 6 && drop > 3.5) {
+        world.piers.push({ x: f.x, z: f.z, yaw: f.yaw, top: f.h - 1.7, bottom: f.h - drop - 1.5, w: 2 * road.hw + 1 });
+        for (let k = -road.hw; k <= road.hw + 0.01; k += 1.5) { const t = world.addCollider(f.x + f.lx * k, f.z + f.lz * k, 0.95); t.y = f.h - drop; t.hi = f.h - 2.4; }
+      }
     }
   }
   // ---- towns: houses and shops along the ring road either side of each garage, on whatever ground is there (each
@@ -739,9 +773,13 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
         const f = frame(road, wrap(s)), side = -dir, x = f.x + f.lx * side * (road.hw + 5), z = f.z + f.lz * side * (road.hw + 5);
         town.signs.push({ x, z, y: gridAt(x, z), yaw: Math.atan2(-f.tx * dir, -f.tz * dir) });
       }
-      for (const o of B) {          // solid: a row of round stops along each building's length
-        const m = Math.max(1, Math.round(o.w / o.d)), cx = Math.cos(o.yaw), cz = Math.sin(o.yaw);
-        for (let j = 0; j < m; j++) { const a = (j + 0.5) / m - 0.5; world.addCollider(o.x + cx * a * o.w, o.z - cz * a * o.w, Math.max(o.d, o.w / m) * 0.55); }
+      for (const o of B) {          // solid: small round stops close together just inside each wall, so the walls are where they look
+        const cx = Math.cos(o.yaw), cz = Math.sin(o.yaw), R = 0.9, W = (o.w + 0.3) / 2 - R, D = (o.d + 0.3) / 2 - R;
+        const at = (a, b) => world.addCollider(o.x + cx * a + cz * b, o.z - cz * a + cx * b, R);
+        for (const [L, fixed, along] of [[W, D, true], [W, -D, true], [D, W, false], [D, -W, false]]) {
+          const m = Math.max(1, Math.ceil((2 * L) / 1.2));
+          for (let j = 0; j <= m; j++) { const t = -L + (2 * L * j) / m; if (along) at(t, fixed); else at(fixed, t); }
+        }
       }
       world.towns.push(town);
     });

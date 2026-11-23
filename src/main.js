@@ -799,7 +799,7 @@ function start(hot) {
     toggleUnits: setUnits, toggleMute: setMute, toggleMusic: setMusic, nextWeather: () => { setWeather(WEATHER_MODES[(WEATHER_MODES.indexOf(S().weather) + 1) % WEATHER_MODES.length]); store.commit(); }, ghostTime, setGhost: (on) => { S().ghost = on; store.commit(); }, nextTime: () => { setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); }, toggleFps: () => { showFps = !showFps; if (!showFps) $('fps').textContent = ''; },
     findHints, findCars: () => FIND_IDS, showNitro,
     toggleTilt: () => setTilt(!S().tilt).then(() => { if (paused) ui.pause(); }), toggleBuzz: () => { S().buzz = !S().buzz; store.commit(); if (S().buzz) buzz(40); },
-    photo: openPhoto, map: openMap, dailyInfo, tipsOn: () => S().tipsOn, schoolTests: () => schoolTests, startTest: (id) => { const d = schoolTests.find((q) => q.id === id); if (!d) return; if (game.job) { toast('Deliver or lose the cargo first', 2.4); return; } if (duel) endDuel(); startRace(d, 1); }, trafficOn: () => S().traffic !== false, toggleTraffic: () => { S().traffic = S().traffic === false; store.commit(); if (!S().traffic) traffic.clear(); }, toggleTips: () => { const s = S(); s.tipsOn = !s.tipsOn; if (s.tipsOn) { s.tips = []; tipSince = TIP_GAP - 8; } else hideTip(); store.commit(); },
+    photo: openPhoto, map: openMap, dailyInfo, tipsOn: () => S().tipsOn, cruiseOn: () => !!S().cruise, toggleCruise: () => { S().cruise = !S().cruise; store.commit(); toast(S().cruise ? (S().kid ? 'Auto throttle on (kid mode keeps its own speed while it is on)' : 'Auto throttle on: up to 80 mph. Press the throttle to go faster, brake to slow down') : 'Auto throttle off', 3); }, schoolTests: () => schoolTests, startTest: (id) => { const d = schoolTests.find((q) => q.id === id); if (!d) return; if (game.job) { toast('Deliver or lose the cargo first', 2.4); return; } if (duel) endDuel(); startRace(d, 1); }, trafficOn: () => S().traffic !== false, toggleTraffic: () => { S().traffic = S().traffic === false; store.commit(); if (!S().traffic) traffic.clear(); }, toggleTips: () => { const s = S(); s.tipsOn = !s.tipsOn; if (s.tipsOn) { s.tips = []; tipSince = TIP_GAP - 8; } else hideTip(); store.commit(); },
     testCash: () => { S().cash += 10000; store.commit(); audio.buy(); }, resetProgress,
   });
   titleInfo();
@@ -973,6 +973,7 @@ function start(hot) {
     trueAgain();
     if (paused || mode === 'title' || mode === 'offer') return;
     if (S().kid && (mode === 'roam' || mode === 'race')) inp = kidInput(car, inp, kidOut);
+    else if (S().cruise && (mode === 'roam' || mode === 'race')) inp = cruiseInput(inp);
     acc += dt; thumpT -= dt; if (mode !== 'roam') nitro.on = false;
     const two = mode === 'duel' || mode === 'duelres' ? input.poll2() : null;
     while (acc >= STEP) {
@@ -1193,6 +1194,17 @@ function start(hot) {
 
   window.claude?.hot?.snapshot?.(() => (mode === 'roam' ? { p: car.pos.toArray(), q: car.quat.toArray() } : {}));
   // test hooks: run the game forward without drawing, and jump straight to a garage or a race
+  // auto throttle (build 36, Michael asked for "auto drive to 80mph with ability to override by applying more
+  // throttle"): the pedal is pressed for you up to CRUISE m/s; pressing the throttle harder than that goes faster,
+  // and the brake always wins (and still stops and reverses as usual)
+  const CRUISE = 80 / 2.23694;
+  const cruiseOut = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true };
+  function cruiseInput(inp) {
+    if (inp.brake > 0.05 || inp.handbrake) return inp;
+    const auto = car.speed < CRUISE ? Math.min(1, (CRUISE - car.speed) * 0.5 + 0.15) : 0;
+    if (inp.throttle >= auto) return inp;
+    Object.assign(cruiseOut, inp); cruiseOut.throttle = auto; return cruiseOut;
+  }
   const advance = (sec, inp = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true }) => { for (let f = 0; f < sec * 60; f++) simulate(1 / 60, inp); };
   window.__game = { traffic, schoolTests, trail, showCar, trueAgain, get shownAt() { return shownAt; }, startDuel, endDuel, get duel() { return duel; }, get car2() { return car2; }, duoHud, get dustKinds() { const k = {}; for (const d of dust) if (d.visible) k[d.userData.kind] = (k[d.userData.kind] || 0) + 1; return k; }, daily, dailyInfo, skids, get flames() { return flames.map((f) => f.visible); }, tipContext, get tip() { return tipEl.hidden ? null : $('tip-text').textContent; }, tipTick, nitro, showNitro, traps, drift, stunts, mapView: VIEW, bigmap: MAP, openMap, closeMap, setNav, navPts, get nav() { return nav; }, photo: PH, openPhoto, closePhoto, snap, tilt, wake, setTilt, startCup, cupInfo, get raceNote() { return raceNote; }, finds, findCheck, get crates() { return crateVis.map((v) => v.visible); }, get barnCar() { return !!barnVis; }, weather: WX, setWeather, turnWeather, get fog() { return [scene.fog.near, scene.fog.far]; }, checkGoals: () => { goalT = 0; checkGoals(0); }, goalNews, audio, setTime, applyLook, day: DAY, get night() { return night; }, get headlight() { return headlight ? headlight.intensity : null; }, car, world, begin, input, camera, game, store, ui, races, zones, advance, openGarage, openOffer, startRace, endRace, pause, resume,
     pinQuality(q) { quality = q; locked = true; applyQuality(); },

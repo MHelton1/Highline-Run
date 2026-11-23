@@ -247,6 +247,7 @@ export function createUI(g) {
         el('button', { id: 'dlg-photo', type: 'button', class: 'btn', onclick: () => g.photo() }, 'Photo mode'),
         el('button', { id: 'dlg-goals', type: 'button', class: 'btn', onclick: () => goals() }, `Goals ${opt.goals.done}/${opt.goals.all}`),
         !racing && el('button', { id: 'dlg-school', type: 'button', class: 'btn', onclick: () => school() }, 'Driving tests'),
+        el('button', { id: 'dlg-cruise', type: 'button', class: 'btn' + (g.cruiseOn() ? ' on' : ''), 'aria-pressed': String(g.cruiseOn()), onclick: () => { g.toggleCruise(); pause(); focusOn($('dlg-cruise')); } }, 'Auto throttle ' + (g.cruiseOn() ? (g.metric() ? 'on (130 km/h)' : 'on (80 mph)') : 'off')),
         el('button', { id: 'dlg-kid', type: 'button', class: 'btn' + (opt.kid ? ' on' : ''), 'aria-pressed': String(!!opt.kid), onclick: () => { g.toggleKid(); pause(); focusOn($('dlg-kid')); } }, 'Kid mode ' + (opt.kid ? 'on' : 'off')),
         el('button', { id: 'dlg-units', type: 'button', class: 'btn', onclick: () => { g.toggleUnits(); pause(); focusOn($('dlg-units')); } }, 'Speed in ' + (opt.metric ? 'km/h' : 'mph')),
         opt.touch && el('button', { id: 'dlg-tilt', type: 'button', class: 'btn' + (opt.tilt ? ' on' : ''), 'aria-pressed': String(!!opt.tilt), onclick: () => { g.toggleTilt(); } }, 'Steering: ' + (opt.tilt ? 'tilt' : 'buttons')),

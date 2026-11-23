@@ -412,15 +412,13 @@ export function buildBridges(world, scene) {
         const d0 = k * 4; for (let s = 0; s < 3; s++) dIdx.push(d0 + s, d0 + s + 1, d0 + s + 4, d0 + s + 1, d0 + s + 5, d0 + s + 4);
         const w0 = k * 8; for (const o of [0, 4]) for (let s = 0; s < 3; s++) wIdx.push(w0 + o + s, w0 + o + s + 1, w0 + o + s + 8, w0 + o + s + 1, w0 + o + s + 9, w0 + o + s + 8);
       }
-      // a pier every 26 m where the ground is well below
-      const drop = f.h - world.ground(f.x, f.z);
-      if ((i - b.i0) % 13 === 6 && drop > 3.5) piers.push({ x: f.x, z: f.z, yaw: f.yaw, top: f.h - 1.7, bottom: f.h - drop - 1.5, w: 2 * hw + 1 });
     }
     for (const [arr, ix, mat] of [[deck, dIdx, concrete], [wall, wIdx, wallMat]]) {
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); geo.setIndex(ix); geo.computeVertexNormals();
       const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; group.add(m);
     }
   }
+  piers.push(...(world.piers || []));   // a pier every 26 m where the ground is well below (solid: see terrain.js)
   if (piers.length) {
     const box = new THREE.BoxGeometry(1, 1, 1).translate(0, 0.5, 0), inst = new THREE.InstancedMesh(box, concrete, piers.length), m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), up = new THREE.Vector3(0, 1, 0);
     piers.forEach((p, k) => { q.setFromAxisAngle(up, p.yaw); m4.compose(new THREE.Vector3(p.x, p.bottom, p.z), q, new THREE.Vector3(p.w, p.top - p.bottom, 1.8)); inst.setMatrixAt(k, m4); });

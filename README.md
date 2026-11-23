@@ -113,6 +113,8 @@ Pictures for judging the look (not pass or fail):
     REGION=coast node tests/traffic.mjs   # traffic: fills in, keeps its lane and speed, slows in towns, queues behind a parked car
     REGION=coast node tests/trafficui.cjs [outdir]  # traffic in the page: drawn, off in races, the menu switch, pictures
     REGION=coast node tests/school.mjs [calibrate]  # driving tests: robot runs in the school car against the medal times
+    node tests/solid.mjs                  # buildings, bridge piers and railings stop the car; it can drive under a bridge
+    node tests/cruiseui.cjs               # auto throttle: holds 80 mph, more throttle overrides, brake cancels
     REGION=coast node tests/schoolui.cjs [outdir]  # driving tests in the page: list, school car, pay once, own car back
     node tests/garage8.cjs [outdir]  # garage with every car on an upright and a sideways phone (pictures)
     node tests/carshots.cjs [ids] [six|one|two|side|rear|top]  # the car models alone on a pad (bundles tests/viewer/entry.js)
@@ -209,6 +211,16 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   spec and model in and back). `SCHOOL_MEDALS` come from `node tests/school.mjs calibrate` (gold 3% over the best robot,
   silver 14%, bronze 30%); rerun it after any change to the roads. A better medal pays the difference once
   (`improvePay`), no daily challenge credit. Menu: "Driving tests". Tests: `tests/school.mjs`, `tests/schoolui.cjs`.
+- Solid world and auto throttle (build 36, from Michael's report): `world.sample(x, z, out, y)` takes the height of
+  whatever asks; a bridge deck more than 2 m above it is ignored, so cars drive on the ground or river bed underneath.
+  Bridge piers (`world.piers`, every 13 samples where the deck is over 3.5 m up) and abutment walls (0.8 to 3.4 m) are
+  colliders with `hi` limits; railings are dense stops with `lo`/`hi` so they only stop cars on the deck. Car against
+  scenery uses the car's box, not its centre: closest point of the box to each collider circle (`t.rad`, trunks
+  0.3 + 0.06 x size), push out, bounce, and turn the car by where it hit. Town buildings are ringed with small stops.
+  River banks are carved by distance to the river's segments and smoothed twice (not under bridges or near roads).
+  Auto throttle (`cruiseInput` in main.js, menu switch saved as `cruise`): holds 80 mph in free roam and races, the
+  player's throttle wins when it asks for more, the brake or handbrake hands control back. Tests: `tests/solid.mjs`,
+  `tests/cruiseui.cjs`.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

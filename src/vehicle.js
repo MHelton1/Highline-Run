@@ -130,8 +130,8 @@ export class Vehicle {
       w.prevComp = w.comp; w.onGround = false; w.fs = 0;
       tmp.copy(w.local).applyQuaternion(this.quat).add(this.pos);
       if (up.y > 0.2) {
-        let t = (tmp.y - world.sample(tmp.x, tmp.z)) / up.y;
-        for (let k = 0; k < 2; k++) { const hx = tmp.x - up.x * t, hz = tmp.z - up.z * t; t += (tmp.y - up.y * t - world.sample(hx, hz, q)) * up.y; }
+        let t = (tmp.y - world.sample(tmp.x, tmp.z, undefined, tmp.y)) / up.y;   // (the height lets a car under a bridge see the ground, not the deck)
+        for (let k = 0; k < 2; k++) { const hx = tmp.x - up.x * t, hz = tmp.z - up.z * t; t += (tmp.y - up.y * t - world.sample(hx, hz, q, tmp.y)) * up.y; }
         const comp = s.restLen + s.radius - t;
         if (comp > 0) {
           w.onGround = true; w.comp = Math.min(comp, s.restLen);
@@ -196,7 +196,7 @@ export class Vehicle {
     this.impact = 0; let scraping = 0;
     for (const c of this.corners) {
       tmp.copy(c).applyQuaternion(this.quat).add(this.pos);
-      const pen = world.sample(tmp.x, tmp.z, q) - tmp.y;
+      const pen = world.sample(tmp.x, tmp.z, q, tmp.y) - tmp.y;
       if (pen <= 0) continue;
       scraping++;
       this.pointVel(tmp, vc);
@@ -239,7 +239,7 @@ export class Vehicle {
     this.angVel.copy(wl).applyQuaternion(this.quat);
     if (!grounded && !scraping && s.airLevel) {
       // In the air, ease roll and pitch toward the ground ahead so the car comes down on its wheels.
-      world.sample(this.pos.x + this.vel.x * 0.25, this.pos.z + this.vel.z * 0.25, q);
+      world.sample(this.pos.x + this.vel.x * 0.25, this.pos.z + this.vel.z * 0.25, q, this.pos.y);
       tmp.set(q.nx * 0.6, 0.4 + 0.6 * q.ny, q.nz * 0.6).normalize();
       cr.crossVectors(up, tmp);
       tmp2.copy(this.angVel).addScaledVector(up, -this.angVel.dot(up));
@@ -253,17 +253,37 @@ export class Vehicle {
     Q.set(qx, qy, qz, qw).normalize();
 
     // ---- trees and buildings ----
+    // Every solid thing is a round stop. It is tested against the car's whole footprint (a box the size of the body),
+    // not just its middle, so the nose and the sides meet walls and trees where they look.
     const hash = world.treeHash;
     if (hash.size) {
-      const cx = (this.pos.x + HALF) >> 4, cz = (this.pos.z + HALF) >> 4;
+      const cx = (this.pos.x + HALF) >> 4, cz = (this.pos.z + HALF) >> 4, B = s.box;
+      let fx = fwd.x, fz = fwd.z; const fl = Math.hypot(fx, fz) || 1; fx /= fl; fz /= fl;
+      const lx = fz, lz = -fx;
       for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
         const list = hash.get((cx + a) * 4096 + cz + b); if (!list) continue;
         for (const t of list) {
-          const dx = this.pos.x - t.x, dz = this.pos.z - t.z, d = Math.hypot(dx, dz), r = t.rad ?? 1.25 + 0.2 * t.s;
-          if (d >= r || d < 1e-4 || this.pos.y - t.y > 4 || (t.lo !== undefined && this.pos.y < t.lo)) continue;
-          const nx = dx / d, nz = dz / d, vn = this.vel.x * nx + this.vel.z * nz;
-          this.pos.x += nx * (r - d); this.pos.z += nz * (r - d);
-          if (vn < 0) { this.vel.x -= nx * vn * 1.25; this.vel.z -= nz * vn * 1.25; this.vel.multiplyScalar(0.8); this.angVel.y += (nx * fwd.z - nz * fwd.x) * vn * 0.25; if (-vn > this.impact) this.impact = -vn; }
+          if (this.pos.y - t.y > 4 || (t.lo !== undefined && this.pos.y < t.lo) || (t.hi !== undefined && this.pos.y > t.hi)) continue;
+          const r = t.rad ?? 0.3 + 0.06 * t.s, rx = t.x - this.pos.x, rz = t.z - this.pos.z;
+          if (rx * rx + rz * rz > (r + B.z + B.x) ** 2) continue;
+          const al = rx * fx + rz * fz, la = rx * lx + rz * lz;
+          const ca = al < -B.z ? -B.z : al > B.z ? B.z : al, cl = la < -B.x ? -B.x : la > B.x ? B.x : la;
+          const ex = rx - fx * ca - lx * cl, ez = rz - fz * ca - lz * cl, d = Math.hypot(ex, ez);
+          let nx, nz, push;
+          if (d > 1e-4) { if (d >= r) continue; nx = -ex / d; nz = -ez / d; push = r - d; }
+          else {                  // the stop's centre is inside the footprint: out by the shorter way
+            const pa = B.z - Math.abs(al), pl = B.x - Math.abs(la);
+            if (pa < pl) { const sg = al > 0 ? -1 : 1; nx = fx * sg; nz = fz * sg; push = pa + r; } else { const sg = la > 0 ? -1 : 1; nx = lx * sg; nz = lz * sg; push = pl + r; }
+          }
+          const vn = this.vel.x * nx + this.vel.z * nz;
+          this.pos.x += nx * push; this.pos.z += nz * push;
+          if (vn < 0) {
+            this.vel.x -= nx * vn * 1.25; this.vel.z -= nz * vn * 1.25; this.vel.multiplyScalar(0.8);
+            // the knock turns the car about its middle, by how far off-centre it landed (a corner clipped spins it)
+            const px = fx * ca + lx * cl, pz = fz * ca + lz * cl;
+            this.angVel.y += (pz * nx - px * nz) * -vn * 0.3;
+            if (-vn > this.impact) this.impact = -vn;
+          }
         }
       }
     }

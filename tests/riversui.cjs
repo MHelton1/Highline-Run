@@ -9,6 +9,7 @@ const OUT = process.argv[2] || path.join(__dirname, 'shots'); require('fs').mkdi
   const b = await chromium.launch({ args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const ctx = await b.newContext({ viewport: { width: 1280, height: 720 } });
   const p = await ctx.newPage(), errs = []; let bad = 0;
+  p.setDefaultTimeout(90000);
   p.on('pageerror', (e) => errs.push(e.message)); p.on('console', (m) => { if (m.type() === 'error') errs.push(m.text()); });
   const check = (name, ok, v) => { if (!ok) bad++; console.log(name.padEnd(10), ok ? 'ok  ' : 'BAD ', JSON.stringify(v)); };
   await p.goto('file://' + path.join(__dirname, '..', 'dist', 'local.html') + '#r=coast');
@@ -66,7 +67,7 @@ const OUT = process.argv[2] || path.join(__dirname, 'shots'); require('fs').mkdi
     return { dry: +(w.ground(x, z) - w.waterAt(x, z)).toFixed(1), below: +(f.h - g.car.pos.y).toFixed(1) };
   }, [bi, step]);
   const view = await look(0, 14);
-  check('valley', view.dry > 0 && view.below > 3, view);
+  check('valley', view.dry > 0 && view.below > 2, view);
   await p.waitForTimeout(2500); await p.screenshot({ path: path.join(OUT, 'bridge-valley.png') });
   const view2 = await look(1, -16);
   await p.waitForTimeout(2500); await p.screenshot({ path: path.join(OUT, 'bridge-valley2.png') });

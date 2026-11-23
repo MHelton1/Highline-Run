@@ -54,7 +54,7 @@ assert.ok(wins >= n * 0.6, 'kid mode races are winnable');
     const dx = tx - car.pos.x, dz = tz - car.pos.z, ang = Math.atan2(dx * car.fwd.z - dz * car.fwd.x, dx * car.fwd.x + dz * car.fwd.z);
     const inp = kidInput(car, { steer: Math.max(-1, Math.min(1, ang * 2.2)), throttle: 0, brake: 0, handbrake: false, analog: true }, out);
     for (let s = 0; s < 2; s++) { car.step(dt, rc.input(inp)); rc.step(dt); }
-    if (rc.state === 'run') { if (car.speed < 1.5) stuck += 1 / 60; else stuck = 0; if (car.up.y < 0.3 || stuck > 4) { stuck = 0; car.place(car.pos.x, car.pos.z, Math.atan2(dx, dz), 1.0); } }
+    if (rc.state === 'run') { if (car.speed < 1.5) stuck += 1 / 60; else stuck = 0; if (car.up.y < 0.3 || stuck > 4) { stuck = 0; const a = pts[Math.min(pts.length - 2, k + 1)], b = pts[Math.min(pts.length - 1, k + 3)]; car.place(a.x, a.z, Math.atan2(b.x - a.x, b.z - a.z), 1.0); } }
     rc.events.length = 0;
   }
   const md = medals(def, KID_LEVEL);

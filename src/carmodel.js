@@ -225,7 +225,7 @@ const STYLES = {
   coupe(s, B, ax) {
     const L = B.z, zf = s.wheelZf, zr = s.wheelZr, wOut = s.wheelX + s.tyreW / 2 + 0.02;
     const sh = along([[-L, 0.37], [-L + 0.14, 0.45], [zr, 0.475], [-0.45, 0.4], [0.5, 0.37], [zf, 0.42], [L - 0.22, 0.3], [L, 0.2]]);
-    const roofY = B.y1 + 0.035, wing = s.look === 'wing';
+    const roofY = B.y1 + 0.035, wing = s.look === 'wing', hyper = s.look === 'hyper', proto = s.look === 'proto';
     return {
       body: { len: [-L, L], rs: 0.07, tumble: 0.05,
         tw: (z) => (z > 0.5 || z < -1.6 ? 0.55 : 0.3),
@@ -248,7 +248,19 @@ const STYLES = {
           b.box(0.1, 0.06, 0.16, M.paint, sx * (wOut - 0.15), sh(0.3) + 0.08, 0.3, [0.7, 0.8]);                     // mirrors
           b.cyl(0.055, 0.055, 0.2, 10, M.metal, sx * 0.34, B.y0 + 0.1, -L + 0.01, Math.PI / 2);            // exhausts
         }
-        b.box(2 * wOut - 0.4, 0.045, 0.3, M.paint, 0, sh(-L + 0.2) + 0.05, -L + 0.13, null, -0.16);        // ducktail
+        if (!hyper && !proto) b.box(2 * wOut - 0.4, 0.045, 0.3, M.paint, 0, sh(-L + 0.2) + 0.05, -L + 0.13, null, -0.16);        // ducktail
+        if (hyper) {           // long low tail: a slim lip spoiler, big side intakes, a spine down the engine cover
+          b.box(2 * wOut - 0.3, 0.03, 0.22, M.dark, 0, sh(-L + 0.2) + 0.04, -L + 0.12, null, -0.05);
+          for (const sx of [1, -1]) { b.box(0.06, 0.22, 0.7, M.dark, sx * (wOut - 0.03), 0.2, zr + s.radius + 0.5, null, 0, sx * -0.12); b.box(0.04, 0.05, 1.6, M.dark, sx * (wOut - 0.06), sh(-0.6) - 0.02, -0.6); }
+          b.box(0.06, 0.06, 1.4, M.paint, 0, roofY - 0.02, -1.3, [1, 1], 0.12);
+        }
+        if (proto) {           // endurance prototype: full-width high wing on end plates, a shark fin, a roof scoop
+          const wy = sh(-L + 0.3) + 0.42;
+          for (const sx of [1, -1]) { b.box(0.03, 0.62, 0.62, M.paint, sx * (wOut - 0.06), wy - 0.12, -L + 0.3); b.box(0.04, 0.42, 0.14, M.dark, sx * 0.35, wy - 0.22, -L + 0.36, null, 0.1); }
+          b.box(2 * wOut - 0.14, 0.05, 0.46, M.dark, 0, wy, -L + 0.3, null, -0.1); b.box(2 * wOut - 0.14, 0.03, 0.2, M.dark, 0, wy + 0.13, -L + 0.18, null, -0.35);
+          b.box(0.03, 0.34, 1.7, M.paint, 0, roofY - 0.06, -L + 1.2, [1, 0.4, -0.5]);
+          b.box(0.3, 0.12, 0.42, M.dark, 0, roofY + 0.05, -0.55, [0.8, 0.7]);
+        }
         if (wing) {                                                                                        // rear wing on two stays
           const wy = sh(-L + 0.3) + 0.3;
           for (const sx of [1, -1]) { b.box(0.04, 0.3, 0.16, M.dark, sx * 0.48, wy - 0.15, -L + 0.3, null, 0.15); b.box(0.03, 0.14, 0.36, M.dark, sx * (wOut - 0.2), wy + 0.02, -L + 0.26); }

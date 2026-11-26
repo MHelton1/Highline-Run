@@ -24,7 +24,7 @@ for (const bad of [null, { r: 'mars', lv: 1, round: 0, pts: {} }, { r: 'desert',
 const back = cleanSave({ cups: { mountain: 1, desert: 2, coast: 0 }, cup: { r: 'coast', lv: 0, round: 2, pts: { you: 3, 1: 1, 2: 2, 3: 3 } } });
 assert.deepEqual(back.cups, { mountain: 1, desert: 2 }); assert.equal(back.cup.round, 2);
 // the champion's car is not in the showroom
-assert.deepEqual(PRIZE_IDS, [CUP_CAR]); assert.ok(!CAR_IDS.includes(CUP_CAR));
+assert.deepEqual(PRIZE_IDS, [CUP_CAR, 'hyper']); assert.ok(!CAR_IDS.includes(CUP_CAR));
 // goals: one cup goal per region, and all three in the garage
 const s = freshSave(); s.cups = { mountain: 1, desert: 1 };
 assert.equal(regionGoals(s, 'mountain').find((q) => q.id === 'mountain.cup').have, 1); assert.equal(garageGoals(s).find((q) => q.id === 'garage.cups').have, 2);

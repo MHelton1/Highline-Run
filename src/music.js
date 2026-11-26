@@ -10,6 +10,7 @@ const hz = (m) => 440 * Math.pow(2, (m - 69) / 12);
 export const STYLES = {
   mountain: { bpm: 84, chords: [[57, [0, 3, 7]], [53, [0, 4, 7]], [48, [0, 4, 7, 12]], [55, [0, 4, 7]]], lead: 'bell', pad: 0.9, swing: 0 },
   desert: { bpm: 72, chords: [[52, [0, 3, 7]], [53, [0, 4, 7]], [52, [0, 3, 7]], [50, [0, 3, 7]]], lead: 'twang', pad: 0.75, swing: 0.12 },
+  speedway: { bpm: 108, chords: [[55, [0, 4, 7]], [48, [0, 4, 7]], [50, [0, 4, 7]], [55, [0, 4, 7]]], lead: 'twang', pad: 0.7, swing: 0.08 },
   coast: { bpm: 96, chords: [[50, [0, 4, 7]], [47, [0, 3, 7]], [55, [0, 4, 7]], [57, [0, 4, 7]]], lead: 'marimba', pad: 0.75, swing: 0.06 },
 };
 

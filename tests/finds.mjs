@@ -8,7 +8,7 @@ import { buildSpec, CARS, CAR_IDS, FIND_IDS } from '../src/cars.js';
 import { placeFinds, addRamps, clearTrees, barnHint, rampRise, airPay, CRATES, BARN_CAR } from '../src/finds.js';
 let bad = 0;
 const check = (name, ok, v) => { if (!ok) bad++; console.log(name.padEnd(26), ok ? 'ok  ' : 'BAD ', typeof v === 'string' ? v : JSON.stringify(v)); };
-check('hidden cars', FIND_IDS.length === 3 && FIND_IDS.every((id) => !CAR_IDS.includes(id) && CARS[id].price === 0) && Object.values(BARN_CAR).every((id) => FIND_IDS.includes(id)), FIND_IDS);
+check('hidden cars', FIND_IDS.length === 4 && FIND_IDS.every((id) => !CAR_IDS.includes(id) && CARS[id].price === 0) && Object.values(BARN_CAR).every((id) => FIND_IDS.includes(id)), FIND_IDS);
 check('air pay', airPay(0.8) === 0 && airPay(1) === 80 && airPay(2) === 320, [airPay(0.8), airPay(1), airPay(2)]);
 const regions = process.argv[2] ? process.argv[2].split(',') : ['mountain', 'desert', 'coast'];
 for (const r of regions) {

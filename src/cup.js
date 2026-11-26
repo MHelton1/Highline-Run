@@ -8,7 +8,7 @@ export const POINTS = [10, 6, 3, 1];
 export const PURSE = [6000, 3000, 1500, 500];
 export const TROPHY = ['Gold', 'Silver', 'Bronze', 'No'];
 export const CUP_CAR = 'champ';
-export const CUP_NAME = { mountain: 'Highline Cup', desert: 'Redrock Cup', coast: 'Saltcliff Cup' };
+export const CUP_NAME = { mountain: 'Highline Cup', desert: 'Redrock Cup', coast: 'Saltcliff Cup', speedway: 'Ironhorse Cup' };
 export const purse = (place, level = 1) => Math.round(PURSE[place - 1] * LEVELS[level].prize / 50) * 50;
 
 // the three rival teams: the Grand Prix's grid keeps its numbers and colours all the way through the cup

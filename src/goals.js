@@ -2,7 +2,7 @@
 // cash reward once. Finishing every goal in a region unlocks that region's own paint. Progress comes from the save:
 // counters kept per region in `stats`, race results in `rank`, and the cars owned. Pure data and math (runs in node).
 import { REGIONS, REGION_IDS } from './regions.js';
-import { CAR_IDS, FIND_IDS } from './cars.js';
+import { CARS, CAR_IDS, FIND_IDS } from './cars.js';
 import { CRATES, BARN_CAR, AIR_GOAL, popcount } from './finds.js';
 import { CUP_NAME } from './cup.js';
 import { eventsFor, LEVELS } from './race.js';
@@ -53,19 +53,23 @@ export function regionGoals(s, region) {
 }
 
 export function garageGoals(s) {
-  const owned = Object.keys(s.cars).length, bought = CAR_IDS.filter((id) => s.cars[id]).length, found = FIND_IDS.filter((id) => s.cars[id]).length, maxed = Object.values(s.cars).some((c) => c.up.every((v) => v >= 3)) ? 1 : 0;
+  const owned = Object.keys(s.cars).length, bought = CAR_IDS.filter((id) => s.cars[id]).length, found = BASE_FINDS.filter((id) => s.cars[id]).length, maxed = Object.values(s.cars).some((c) => c.up.every((v) => v >= 3)) ? 1 : 0;
   const seen = REGION_IDS.filter((r) => s.stats && s.stats[r] && s.stats[r].v).length;
   const g = (id, name, need, have, pay) => ({ id: 'garage.' + id, group: 'garage', name, need, have: Math.min(need, have), pay });
   return [
     g('cars4', 'Own 4 cars', 4, owned, 5000),
     g('cars8', `Own all ${CAR_IDS.length} cars from the showroom`, CAR_IDS.length, bought, 15000),
-    g('finds', `Find all ${FIND_IDS.length} hidden cars`, FIND_IDS.length, found, 10000),
+    g('finds', `Find all ${BASE_FINDS.length} hidden cars`, BASE_FINDS.length, found, 10000),
     g('maxed', 'Fully upgrade a car (every part to level 3)', 1, maxed, 5000),
     g('travel', `Drive in all ${REGION_IDS.length} regions`, REGION_IDS.length, seen, 2000),
     g('cups', `Win the cup in all ${REGION_IDS.length} regions`, REGION_IDS.length, REGION_IDS.filter((r) => s.cups && s.cups[r] === 1).length, 10000),
   ];
 }
 
+// the hidden cars of the three main regions (the speedway's is a bonus, not needed for the garage goal)
+const BASE_FINDS = FIND_IDS.filter((id) => REGION_IDS.includes(CARS[id].find));
+// the speedway and the hypercar open once every goal of the three main regions is done (or the test switch is on)
+export const bonusOpen = (s) => !!s.bonus || REGION_IDS.every((r) => regionComplete(s, r));
 export const allGoals = (s) => [...REGION_IDS.flatMap((r) => regionGoals(s, r)), ...garageGoals(s)];
 export const isDone = (s, id) => !!(s.done && s.done.includes(id));
 // (the goals added with the bigger maps are `extra`: a region's paint prize, once won, stays won)

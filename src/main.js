@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { buildWorld, SURF, HALF, SIZE } from './terrain.js';
 import { Vehicle, G } from './vehicle.js';
 import { CARS, PAINTS, FIND_IDS, buildSpec, stockTune, PATROL_SPEC } from './cars.js';
-import { buildTerrain, buildRoads, buildTrees, buildProps, buildSea, buildSky, buildFall, GROUND_FX, SKIES, buildSites, buildGarages, buildLines, makeBeam, buildCrates, buildBarn, buildRamps, buildTraps, buildRivers, buildBridges, buildTowns } from './scene.js';
+import { buildTerrain, buildRoads, buildSpeedway, buildTrees, buildProps, buildSea, buildSky, buildFall, GROUND_FX, SKIES, buildSites, buildGarages, buildLines, makeBeam, buildCrates, buildBarn, buildRamps, buildTraps, buildRivers, buildBridges, buildTowns } from './scene.js';
 import { buildCar, setCarEnv, SHADE } from './carmodel.js';
 import { Game, CARGO, RIVAL_SPEC } from './jobs.js';
 import { buildRaces, Race, MEDALS, PLACES, KID_LEVEL, spotsFor, rankKey, medals } from './race.js';
@@ -13,7 +13,7 @@ import { createInput } from './input.js';
 import { createAudio } from './audio.js';
 import { TOD, TOD_NAME, lookAt, hourFor } from './daylight.js';
 import { WEATHERS, WEATHER_MODES, WEATHER_MODE_NAME, WEATHER_NEWS, blendWeather, nextWeather, fixedWeather, SPELL, BLEND } from './weather.js';
-import { claimGoals, bump, best, mark, allGoals, REGION_PAINT } from './goals.js';
+import { claimGoals, bump, best, mark, allGoals, REGION_PAINT, bonusOpen } from './goals.js';
 import { placeFinds, addRamps, clearTrees, barnHint, airPay, AIR_MIN, CRATES, CRATE_PAY, CRATE_R, BARN_R, RAMP, popcount } from './finds.js';
 import { GhostRecorder, encodeGhost, loadGhost, saveGhost, ghostAt, clearGhosts } from './ghost.js';
 import { createStore } from './save.js';
@@ -143,8 +143,16 @@ function start(hot) {
     if ((goalT -= dt) > 0) return; goalT = 1;
     if (mode !== 'roam' && mode !== 'garage' && mode !== 'results') return;
     const { got, finished } = claimGoals(S());
+    unlockBonus();
     if (got.length) { if (got.length > 2) goalNews.push(`${got.length} goals done. +${money(got.reduce((a, q) => a + q.pay, 0))}. See Goals in the menu`); else for (const q of got) goalNews.push(`Goal done: ${q.name}. +${money(q.pay)}`); for (const r of finished) goalNews.push(`Every ${REGIONS[r].name} goal done! New paint: ${PAINTS[REGION_PAINT[r]].name}`); store.commit(); ui.refresh(); }
     if (goalNews.length && toastT <= 0 && mode !== 'results') { const m = goalNews.shift(); toast(m, m.startsWith('Every') ? 5 : 3.6); audio.chime(m.startsWith('Every') ? [523, 659, 784, 1047, 1319] : [784, 1047, 1319]); }
+  }
+  // every goal of the three main regions done: the hypercar goes in the garage and the speedway opens (build 38)
+  function unlockBonus() {
+    const s = S(); if (s.cars.hyper || !bonusOpen(s)) return false;
+    s.cars.hyper = { up: [0, 0, 0, 0], tune: stockTune('hyper'), paint: CARS.hyper.paint }; store.commit();
+    goalNews.push(`Every map cleared! The ${CARS.hyper.base.name} is in your garage, and ${REGIONS.speedway.name} is open: Travel, in any garage`);
+    return true;
   }
   const setTime = (tod) => { S().tod = DAY.tod = tod; DAY.t = 0; if (tod !== 'day') makeHeadlight(); applyLook(hourFor(tod, 0), true); };
   const car = new Vehicle(world, specOf(S().car));
@@ -190,7 +198,7 @@ function start(hot) {
   if (S().tod !== 'day') setTime(S().tod);
   if (S().weather !== 'auto') { const f = fixedWeather(S().weather, world.region); if (f && f !== 'clear') { WX.now = WX.from = f; WX.cur = blendWeather(f, f, 1); applyAll(true); } }
   if (!(S().stats[world.region] || {}).v) { bump(S(), world.region, 'v'); store.commit(); }
-  const ground = buildTerrain(world, scene); buildSea(world, scene); buildRivers(world, scene); buildRoads(world, scene); buildBridges(world, scene); townVis = buildTowns(world, scene); if (townVis) townVis.glow(night); const treeMeshes = buildTrees(world, scene, shadows), smallMeshes = buildProps(world, scene, coarse ? 0.7 : 1);
+  const ground = buildTerrain(world, scene); buildSea(world, scene); buildRivers(world, scene); buildRoads(world, scene); buildBridges(world, scene); buildSpeedway(world, scene); townVis = buildTowns(world, scene); if (townVis) townVis.glow(night); const treeMeshes = buildTrees(world, scene, shadows), smallMeshes = buildProps(world, scene, coarse ? 0.7 : 1);
   buildSites(game.sites, scene); buildGarages(garages, scene); buildLines(world, scene, races);
   // ---- hidden finds: crates to pick up, an old car in a shed, and ramps (laid into the ground after the terrain is drawn) ----
   addRamps(world, finds.ramps); buildRamps(world, finds.ramps, scene, RAMP);
@@ -367,6 +375,24 @@ function start(hot) {
     return c;
   }
   const mapBase = paintBase(MB);
+  // out past the map's east edge on the speedway: the corner map follows the car and draws the roads and Sundown Flats
+  // as it goes, with the miles left to the town
+  function farMap() {
+    const x0 = MV.cx - MV.span / 2, x1 = MV.cx + MV.span / 2, z0 = MV.cz - MV.span / 2, z1 = MV.cz + MV.span / 2;
+    mctx.lineCap = mctx.lineJoin = 'round';
+    mctx.fillStyle = 'rgba(214,206,190,0.75)';
+    for (const t of world.towns) for (const o of t.buildings) if (o.x > x0 && o.x < x1 && o.z > z0 && o.z < z1) { const s = Math.max(1.5, Math.max(o.w, o.d) * MM / MV.span); mctx.fillRect(mx(o.x) - s / 2, my(o.z) - s / 2, s, s); }
+    for (const road of world.roads) {
+      mctx.beginPath(); let on = false;
+      for (let i = road.from; i <= road.to; i += 4) { const x = road.x[i], z = road.z[i]; if (x < x0 - 60 || x > x1 + 60 || z < z0 - 60 || z > z1 + 60) { on = false; continue; } if (on) mctx.lineTo(mx(x), my(z)); else { mctx.moveTo(mx(x), my(z)); on = true; } }
+      if (road.closed && road.x[0] > x0 && road.x[0] < x1) mctx.closePath();
+      mctx.strokeStyle = road.surf === SURF.ASPHALT ? '#f3efe4' : '#c79a5b'; mctx.lineWidth = 5; mctx.setLineDash([]); mctx.stroke();
+    }
+    const left = Math.max(0, (world.speedway.xE - car.pos.x) / 1609.34);
+    mctx.font = '600 26px "Barlow Condensed", sans-serif'; mctx.textAlign = 'center'; mctx.fillStyle = '#f3efe4'; mctx.strokeStyle = 'rgba(14,17,20,0.8)'; mctx.lineWidth = 5;
+    const label = left > 0.05 ? `${RG.farTown} ${left.toFixed(1)} mi` : RG.farTown;
+    mctx.strokeText(label, MM / 2, MM - 18); mctx.fillText(label, MM / 2, MM - 18);
+  }
 
   // ---- input, modes ----
   // title: the opening screen. roam: free driving with cargo runs. garage, offer (a race card), race, results.
@@ -705,6 +731,7 @@ function start(hot) {
     g.font = '600 21px "Barlow Condensed", "Arial Narrow", sans-serif'; g.textBaseline = 'bottom'; g.lineJoin = 'round';
     const boxes = [];
     for (const t of world.towns) {   // town names, in white, beside the town away from the garage name
+      if (t.far) continue;
       const xs = t.buildings.map((o) => bx(o.x)), zs = t.buildings.map((o) => by(o.z)), x = xs.reduce((a, b) => a + b, 0) / xs.length, w = g.measureText(t.name).width;
       const y = Math.max(26, Math.min(...zs) - 8), l = Math.max(4, Math.min(BM - w - 4, x - w / 2));
       boxes.push({ l, r: l + w, t: y - 21, b: y }); g.textAlign = 'left';
@@ -720,7 +747,12 @@ function start(hot) {
       g.lineWidth = 5; g.strokeStyle = 'rgba(14,17,20,.85)'; g.strokeText(name, al === 'left' ? x - 8 : al === 'right' ? x + 8 : x, y); g.fillStyle = z.kind === 'garage' ? '#9cc6ff' : '#cdbbff'; g.fillText(name, al === 'left' ? x - 8 : al === 'right' ? x + 8 : x, y);
     }
     if (nav) drawPin(g, bx(nav.x), by(nav.z), 1.7);
-    g.save(); g.translate(bx(car.pos.x), by(car.pos.z)); g.rotate(-Math.atan2(car.fwd.x, car.fwd.z)); g.scale(1.6, 1.6); g.fillStyle = '#e04a2f'; g.strokeStyle = '#0e1114'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, -13); g.lineTo(9, 10); g.lineTo(0, 5); g.lineTo(-9, 10); g.closePath(); g.stroke(); g.fill(); g.restore();
+    const off = Math.abs(car.pos.x) > HALF || Math.abs(car.pos.z) > HALF;   // out on the speedway's interstate: the arrow waits at the map's edge
+    if (off && world.speedway) {
+      const left = Math.max(0, (world.speedway.xE - car.pos.x) / 1609.34), back = Math.max(0, (car.pos.x - world.speedway.xI) / 1609.34), txt = left > 0.05 ? `On ${RG.interstate}: ${RG.farTown} ${left.toFixed(1)} mi, ${RG.towns[0]} ${back.toFixed(1)} mi back` : `In ${RG.farTown}, ${RG.towns[0]} ${back.toFixed(0)} mi back`;
+      g.textAlign = 'left'; g.lineWidth = 5; g.strokeStyle = 'rgba(14,17,20,.85)'; g.strokeText(txt, 12, BM - 14); g.fillStyle = '#f3efe4'; g.fillText(txt, 12, BM - 14);
+    }
+    g.save(); g.translate(Math.max(14, Math.min(BM - 14, bx(car.pos.x))), Math.max(14, Math.min(BM - 14, by(car.pos.z)))); g.rotate(-Math.atan2(car.fwd.x, car.fwd.z)); g.scale(1.6, 1.6); g.fillStyle = '#e04a2f'; g.strokeStyle = '#0e1114'; g.lineWidth = 3; g.beginPath(); g.moveTo(0, -13); g.lineTo(9, 10); g.lineTo(0, 5); g.lineTo(-9, 10); g.closePath(); g.stroke(); g.fill(); g.restore();
     navNote();
   }
   function setNav(m) { nav = m ? { ...m, y: world.sample(m.x, m.z) } : null; if (MAP.on) drawBig(); }
@@ -801,6 +833,7 @@ function start(hot) {
     toggleTilt: () => setTilt(!S().tilt).then(() => { if (paused) ui.pause(); }), toggleBuzz: () => { S().buzz = !S().buzz; store.commit(); if (S().buzz) buzz(40); },
     photo: openPhoto, map: openMap, dailyInfo, tipsOn: () => S().tipsOn, cruiseOn: () => !!S().cruise, toggleCruise: () => { S().cruise = !S().cruise; store.commit(); toast(S().cruise ? (S().kid ? 'Auto throttle on (kid mode keeps its own speed while it is on)' : 'Auto throttle on: up to 80 mph. Press the throttle to go faster, brake to slow down') : 'Auto throttle off', 3); }, schoolTests: () => schoolTests, startTest: (id) => { const d = schoolTests.find((q) => q.id === id); if (!d) return; if (game.job) { toast('Deliver or lose the cargo first', 2.4); return; } if (duel) endDuel(); startRace(d, 1); }, trafficOn: () => S().traffic !== false, toggleTraffic: () => { S().traffic = S().traffic === false; store.commit(); if (!S().traffic) traffic.clear(); }, toggleTips: () => { const s = S(); s.tipsOn = !s.tipsOn; if (s.tipsOn) { s.tips = []; tipSince = TIP_GAP - 8; } else hideTip(); store.commit(); },
     testCash: () => { S().cash += 10000; store.commit(); audio.buy(); }, resetProgress,
+    bonusOpen: () => bonusOpen(S()), testBonus: () => { S().bonus = true; store.commit(); unlockBonus(); goalT = 0; audio.buy(); },
   });
   titleInfo();
 
@@ -835,11 +868,11 @@ function start(hot) {
     if (!driving()) return;
     if (mode === 'duel') { if (duel.state === 'run') duel.resetPlayer(0); return; }
     if (mode === 'race') { if (race.state === 'run') { race.resetPlayer(); camSnap = true; toast(race.track ? 'Back on the course' : 'Back to the last checkpoint'); } return; }
-    const r = world.nearestRoad(car.pos.x, car.pos.z); car.place(r.x, r.z, r.yaw); camSnap = true; toast('Back on ' + r.road.name);
+    const r = world.nearestRoad(car.pos.x, car.pos.z); car.place(r.x, r.z, r.yaw, undefined, r.h + 0.5); camSnap = true; toast('Back on ' + r.road.name);
   });
   input.on('reset2', () => { if (mode === 'duel' && !paused && duel.state === 'run') duel.resetPlayer(1); });
   input.on('duoReset', (i) => { if (mode === 'duel' && !paused && duel.state === 'run') duel.resetPlayer(i); });
-  input.on('flip', () => { if (!driving() || mode === 'duel' || (race && race.state !== 'run')) return; car.place(car.pos.x, car.pos.z, Math.atan2(car.fwd.x, car.fwd.z), 1.0); toast('Flipped upright'); });
+  input.on('flip', () => { if (!driving() || mode === 'duel' || (race && race.state !== 'run')) return; car.place(car.pos.x, car.pos.z, Math.atan2(car.fwd.x, car.fwd.z), 1.0, car.pos.y + 0.5); toast('Flipped upright'); });
   input.on('camera', () => { if (!driving()) return; camMode = (camMode + 1) % 3; toast(['Chase camera', 'Far camera', 'Hood camera'][camMode], 1.2); });
   input.on('mute', () => { if (!driving()) return; setMute(); toast(S().muted ? 'Sound off' : 'Sound on', 1.2); });
   input.on('time', () => { if (!driving()) return; setTime(TOD[(TOD.indexOf(S().tod) + 1) % TOD.length]); store.commit(); toast('Time of day: ' + TOD_NAME[S().tod], 1.4); });
@@ -864,7 +897,7 @@ function start(hot) {
     if (PH.on) {                     // photo mode: orbit the car
       if (camera.view) camera.clearViewOffset();
       const c = Math.cos(PH.pitch); camTarget.set(car.pos.x + Math.sin(PH.yaw) * c * PH.dist, car.pos.y + 0.8 + Math.sin(PH.pitch) * PH.dist, car.pos.z + Math.cos(PH.yaw) * c * PH.dist);
-      const gh = world.sample(camTarget.x, camTarget.z) + 0.4; if (camTarget.y < gh) camTarget.y = gh;
+      const gh = world.sample(camTarget.x, camTarget.z, undefined, car.pos.y + 1) + 0.4; if (camTarget.y < gh) camTarget.y = gh;
       camera.position.copy(camTarget); look.copy(car.pos); look.y += 0.6; camera.lookAt(look); camera.fov = 55; camera.updateProjectionMatrix(); return;
     }
     if (mode === 'title') { if (camera.view) camera.clearViewOffset(); attract += dt * 0.12; camTarget.set(car.pos.x + Math.sin(attract) * 11, car.pos.y + 3.2, car.pos.z + Math.cos(attract) * 11); camera.position.copy(camTarget); look.copy(car.pos); look.y += 0.6; camera.lookAt(look); camera.fov = 55; camera.updateProjectionMatrix(); return; }
@@ -875,7 +908,7 @@ function start(hot) {
       const dist = Math.max(6.4, (car.spec.box.z * 2 + 2.6) / (2 * tanF * gView.fw / h), 3.6 / (2 * tanF * gView.fh / h));
       camera.fov = 55; camera.setViewOffset(w, h, -gView.ox, -gView.oy, w, h);
       camTarget.set(car.pos.x + Math.sin(a) * dist, car.pos.y + 1.1 + dist * 0.09, car.pos.z + Math.cos(a) * dist);
-      const gh = world.sample(camTarget.x, camTarget.z) + 0.7; if (camTarget.y < gh) camTarget.y = gh;
+      const gh = world.sample(camTarget.x, camTarget.z, undefined, car.pos.y + 1) + 0.7; if (camTarget.y < gh) camTarget.y = gh;
       camera.position.lerp(camTarget, camSnap ? 1 : 1 - Math.exp(-dt * 6)); camSnap = false;
       look.copy(car.pos); look.y += 0.2; camera.lookAt(look); return;
     }
@@ -896,7 +929,7 @@ function start(hot) {
     const big = car.spec.box.z - 2, dist = (camMode === 1 ? 13 : 7.2) + big * 1.6 + car.speed * 0.035, height = (camMode === 1 ? 5.2 : 2.7) + big * 0.5;
     camTarget.copy(car.pos).addScaledVector(camDir, -dist); camTarget.y += height;
     camera.position.lerp(camTarget, jumped ? 1 : 1 - Math.exp(-dt * 9));
-    const gh = world.sample(camera.position.x, camera.position.z) + 1.0; if (camera.position.y < gh) camera.position.y = gh;
+    const gh = world.sample(camera.position.x, camera.position.z, undefined, car.pos.y + 1) + 1.0; if (camera.position.y < gh) camera.position.y = gh;
     look.copy(car.pos).addScaledVector(camDir, 5); look.y += 1.0; camera.lookAt(look);
   }
 
@@ -1005,7 +1038,7 @@ function start(hot) {
         inTown = t;
       }
       if (S().kid) {                  // kid mode puts the car back on its wheels, and back on the road when it is stuck
-        if (car.up.y < 0.35 && car.speed < 2) { kidUpT += dt; if (kidUpT > 1.5) { kidUpT = 0; car.place(car.pos.x, car.pos.z, Math.atan2(car.fwd.x, car.fwd.z), 1.0); toast('Back on your wheels', 1.2); } } else kidUpT = 0;
+        if (car.up.y < 0.35 && car.speed < 2) { kidUpT += dt; if (kidUpT > 1.5) { kidUpT = 0; car.place(car.pos.x, car.pos.z, Math.atan2(car.fwd.x, car.fwd.z), 1.0, car.pos.y + 0.5); toast('Back on your wheels', 1.2); } } else kidUpT = 0;
         if (inp.throttle > 0.5 && car.speed < 0.8) { kidStuckT += dt; if (kidStuckT > 4) { kidStuckT = 0; input.fire('reset'); } } else kidStuckT = 0;
       }
       if (car.up.y < 0.35 && car.speed < 2) { upside += dt; if (upside > 1.5) { toast(coarse && !input.pad ? 'Tap FLIP to get back on your wheels' : `Press ${said('flip')} to flip upright`, 1); upside = 1; } } else upside = 0;
@@ -1175,8 +1208,10 @@ function start(hot) {
       el.bust.style.transform = `scaleX(${Math.min(1, game.bust).toFixed(2)})`; el.bustRow.hidden = game.bust < 0.03;
     }
     // minimap
-    { const lim = HALF - MV.span / 2; MV.cx = Math.max(-lim, Math.min(lim, car.pos.x)); MV.cz = Math.max(-lim, Math.min(lim, car.pos.z)); }
-    mctx.clearRect(0, 0, MM, MM); { const k = MB / SIZE; mctx.drawImage(mapBase, (HALF - MV.cx - MV.span / 2) * k, (HALF - MV.cz - MV.span / 2) * k, MV.span * k, MV.span * k, 0, 0, MM, MM); }
+    const farOut = world.corridor && car.pos.x > HALF - MV.span / 2 && car.pos.z > world.corridor.z0 && car.pos.z < world.corridor.z1;
+    if (farOut) { MV.cx = car.pos.x; MV.cz = car.pos.z; } else { const lim = HALF - MV.span / 2; MV.cx = Math.max(-lim, Math.min(lim, car.pos.x)); MV.cz = Math.max(-lim, Math.min(lim, car.pos.z)); }
+    mctx.clearRect(0, 0, MM, MM);
+    if (farOut) farMap(); else { const k = MB / SIZE; mctx.drawImage(mapBase, (HALF - MV.cx - MV.span / 2) * k, (HALF - MV.cz - MV.span / 2) * k, MV.span * k, MV.span * k, 0, 0, MM, MM); }
     if (racing) {
       for (let i = race.gates.length - 1; i >= race.gate; i--) { const gt = race.gates[i]; if (i === race.gate) dot(gt.x, gt.z, 8, '#62dcea'); else dot(gt.x, gt.z, 3.5, i === race.gates.length - 1 ? '#f3efe4' : '#62dcea'); }
       for (const r of race.rivals) dot(r.car.pos.x, r.car.pos.z, 5, hex(PAINTS[r.paint].hex), true);

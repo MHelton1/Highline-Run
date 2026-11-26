@@ -6,12 +6,13 @@ import { makePath } from './ai.js';
 
 export const SCHOOL_CAR = 'hatch', SCHOOL_PAINT_INDEX = 3;   // Signal yellow (see PAINTS in cars.js)
 export const SCHOOL_PAY = [2000, 1000, 500];               // what a gold, silver or bronze is worth in all
-const PREFIX = { mountain: 'tm-', desert: 'td-', coast: 'tc-' };
+const PREFIX = { mountain: 'tm-', desert: 'td-', coast: 'tc-', speedway: 'ts-' };
 // medal times (gold, silver, bronze, seconds) per region and test, set from the robot runs in tests/school.mjs
 export const SCHOOL_MEDALS = {
   mountain: { start: [9.8, 10.9, 12.4], stop: [8.5, 9.4, 10.7], slalom: [15.4, 17, 19.4], bends: [15.6, 17.2, 19.7], gravel: [27.8, 30.8, 35.1] },
   desert: { start: [11.1, 12.2, 14], stop: [9, 10, 11.4], slalom: [15.7, 17.4, 19.9], bends: [17.5, 19.4, 22.1], gravel: [28.5, 31.5, 35.9] },
   coast: { start: [10.8, 12, 13.7], stop: [9, 10, 11.4], slalom: [15.8, 17.5, 19.9], bends: [16.1, 17.8, 20.3], gravel: [27.1, 30, 34.2] },
+  speedway: { start: [10.4, 11.5, 13.1], stop: [8.8, 9.7, 11.1], slalom: [16.1, 17.9, 20.4], bends: [15.2, 16.8, 19.2], gravel: [18.8, 20.8, 23.8] },
 };
 export const SCHOOL_TESTS = [
   { key: 'start', name: 'Standing Start', blurb: 'From a standstill to the marker 300 m up the road, as quickly as the car will go. Smooth on the throttle, no wheelspin.' },

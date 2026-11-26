@@ -23,7 +23,7 @@ export const arrived = (m, x, z) => !!m && Math.hypot(m.x - x, m.z - z) < ARRIVE
 // the square part of the world the big map shows: everything worth seeing (roads, places) with a margin round it
 export function mapView(points, roads, size, pad = 0.07) {
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
-  const add = (x, z) => { if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; };
+  const h = size / 2, add = (x, z) => { if (Math.abs(x) > h || Math.abs(z) > h) return; if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; };
   for (const p of points) add(p.x, p.z);
   for (const r of roads) for (let i = r.from; i <= r.to; i += 8) add(r.x[i], r.z[i]);
   if (x0 > x1) return { cx: 0, cz: 0, span: size };

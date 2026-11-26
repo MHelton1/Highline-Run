@@ -141,7 +141,19 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     const top = 30 + 70 * hills * hills + 120 * Math.exp(-r2) + 30 * cliff * smooth((edge - r) / 120) * (1 - smooth((edge - r - 260) / 260));   // cliffs stand a little higher than beaches
     return SEA - 22 - 26 * (1 - land) + land * (22 + top);
   };
-  const natural = RG.ground === 'desert' ? desert : RG.ground === 'coast' ? coast : mountain;
+  // The speedway prairie (build 38): low rolling grassland, made dead flat round the oval, along the interstate, at
+  // Trackside and all along the east edge, where the land runs on past the map beside the interstate (world.corridor).
+  const SPEED = RG.layout === 'speedway';
+  const SPW = { H0: 40, C: [-450, -350], LX: 280, R: 210, HW: 11, zM: 44, zI: -26, xI: 1000, miles: 20 };
+  SPW.xE = SPW.xI + SPW.miles * 1609.34;
+  const plains = (x, z) => {
+    const h = SPW.H0 + 9 * noise2(x / 1300 + 3, z / 1300 - 7) + 3.5 * noise2(x / 380 - 2, z / 380 + 5) + 0.7 * noise(x / 90, z / 90);
+    const oval = Math.hypot((x - SPW.C[0]) / 1.35, z - SPW.C[1]);
+    const flat = Math.max(smooth((950 - oval) / 260), smooth((x - (HALF - 700)) / 450), x > 150 ? smooth((280 - Math.abs(z - SPW.zI)) / 140) : 0,
+      x > -500 && x < 1100 ? smooth((230 - Math.abs(z - SPW.zM)) / 120) : 0);
+    return h * (1 - flat) + SPW.H0 * flat;
+  };
+  const natural = SPEED ? plains : RG.ground === 'desert' ? desert : RG.ground === 'coast' ? coast : mountain;
 
   const heights = new Float32Array(V * V);
   for (let j = 0; j < V; j++) for (let i = 0; i < V; i++) heights[j * V + i] = natural(i * CELL - HALF, j * CELL - HALF);
@@ -209,8 +221,71 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     for (let i = 0; i < s.n; i++) h[i] += Math.max(lift[i], gap(i));
   };
 
+  // the speedway's roads: 0 the oval, 1 a dirt ranch road, 2 the pit lane, 3 Speedway Boulevard (pit lane, tunnel, Trackside,
+  // on-ramp), 4 the interstate (20 miles, mostly past the map's east edge), 5 the roundabout at Sundown Flats
+  const SP = SPEED ? speedwayRoads() : null;
+  function speedwayRoads() {
+    const { H0, C, LX, R, HW } = SPW, zF = C[1] + R, raw = [];
+    const seg = (ax, az, bx, bz) => { const m = Math.ceil(Math.hypot(bx - ax, bz - az)); for (let k = 0; k < m; k++) raw.push([ax + (bx - ax) * k / m, az + (bz - az) * k / m]); };
+    const arc = (cx, cz, a0, a1) => { const m = Math.ceil(Math.abs(a1 - a0) * R); for (let k = 0; k < m; k++) { const a = a0 + (a1 - a0) * k / m; raw.push([cx + Math.cos(a) * R, cz + Math.sin(a) * R]); } };
+    // counter-clockwise, so every turn is a left: the frontstretch (with its dogleg) runs east, turns 1-2, back west, turns 3-4
+    seg(C[0] - LX, zF, C[0], zF + 30); seg(C[0], zF + 30, C[0] + LX, zF); arc(C[0] + LX, C[1], Math.PI / 2, -Math.PI / 2);
+    seg(C[0] + LX, C[1] - R, C[0] - LX, C[1] - R); arc(C[0] - LX, C[1], -Math.PI / 2, -1.5 * Math.PI);
+    let pts = raw;
+    for (let pass = 0; pass < 2; pass++) { const n = pts.length, W = 22, out = []; for (let i = 0; i < n; i++) { let sx = 0, sz = 0; for (let k = -W; k <= W; k++) { const q = pts[(i + k + n) % n]; sx += q[0]; sz += q[1]; } out.push([sx / (2 * W + 1), sz / (2 * W + 1)]); } pts = out; }
+    const o = resample(pts, true, 2), n = o.n, h = new Float32Array(n), bank = new Float32Array(n), tanB = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      const f = smooth((Math.abs(o.x[i] - C[0]) - (LX - 70)) / 140);              // 24 degrees through the turns, 5 on the straights
+      tanB[i] = Math.tan((5 + 19 * f) * Math.PI / 180); bank[i] = -tanB[i];          // (left is the infield: the outside is higher)
+      h[i] = H0 + 0.3 + HW * tanB[i];                                                // the inside edge sits on the infield
+    }
+    roads.push({ ...o, h, bank, closed: true, hw: HW, surf: SURF.ASPHALT, blend: 72, name: RG.ring, track: true, noTraffic: true, tex: 'track' });
+    const oval = roads[0];
+    const fr = (i) => { i = ((i % n) + n) % n; const a = (i - 1 + n) % n, b = (i + 1) % n; let tx = oval.x[b] - oval.x[a], tz = oval.z[b] - oval.z[a]; const l = Math.hypot(tx, tz); tx /= l; tz /= l; return { i, x: oval.x[i], z: oval.z[i], tx, tz, lx: tz, lz: -tx }; };
+    // an open road from points carrying their own height: [x, z, h]
+    const lay = (p3, extra) => {
+      const r = resample(p3.map((q) => [q[0], q[1]]), false, 2), hh = new Float32Array(r.n); let j = 0;
+      for (let i = 0; i < r.n; i++) { let bd = 1e18; for (let k = Math.max(0, j - 4); k < Math.min(p3.length, j + 40); k++) { const d = (p3[k][0] - r.x[i]) ** 2 + (p3[k][1] - r.z[i]) ** 2; if (d < bd) { bd = d; j = k; } } hh[i] = p3[j][2]; }
+      roads.push({ ...r, h: hh, closed: false, ...extra }); return roads[roads.length - 1];
+    };
+    // the frontstretch: from index 0 to its east end; its dogleg apex is the start and finish line
+    let kEnd = 0, kApex = 0; for (let k = 0; k < n / 2; k++) { if (oval.x[k] < C[0] + LX) kEnd = k; if (oval.z[k] > oval.z[kApex]) kApex = k; }
+    // ranch road (dirt): from Trackside south and round the west side of the prairie
+    {
+      const cps = [[100, SPW.zM + 6], [60, 300], [-300, 750], [-900, 1000], [-1500, 800], [-1820, 300], [-1760, -300], [-1500, -820]];
+      const t = resample(catmull(cps, false, 60), false, 2), th = new Float32Array(t.n);
+      for (let i = 0; i < t.n; i++) th[i] = natural(t.x[i], t.z[i]);
+      blur(th, 30, false, 3); limitSlope(th, t.ds, 0.16, false); blur(th, 8, false, 2);
+      for (let i = 0; i < 25; i++) th[i] += (H0 + 0.3 - th[i]) * (1 - smooth((i - 8) / 16));   // meets the boulevard level
+      roads.push({ ...t, h: th, closed: false, hw: 3.5, surf: SURF.DIRT, blend: 95, name: RG.trail });
+    }
+    // pit lane: inside the frontstretch, 25 m in from the track's centre line, joining the apron at either end
+    const k0 = -26, k1 = kEnd + 18, pitO = (k) => 6 + 19 * smooth((k - k0) / 45) * smooth((k1 - k) / 45), pit = [];
+    for (let k = k0; k <= k1; k++) { const f = fr(k), oo = pitO(k); pit.push([f.x + f.lx * oo, f.z + f.lz * oo, H0 + 0.3 + Math.max(0, HW - oo) * tanB[f.i]]); }
+    lay(pit, { hw: 6, surf: SURF.ASPHALT, blend: 40, name: RG.pit, pit: true });
+    // Speedway Boulevard: off the pit lane into the infield, round, out under the pit lane and the track through the
+    // tunnel, north to Trackside's main street, east through town and up the on-ramp onto the interstate
+    const kt = kApex + 75, ft = fr(kt), fa = fr(kt + 24), Q = (u) => [ft.x + ft.lx * u, ft.z + ft.lz * u];
+    const DIP = 5.3, F0 = 34, F1 = -16, SL = 0.09;    // tunnel floor H0+0.3-DIP from u = 34 (inside the pit lane) to u = -16 (outside the wall)
+    const depth = (u) => u > F0 ? Math.max(0, DIP - (u - F0) * SL) : u < F1 ? Math.max(0, DIP - (F1 - u) * SL) : DIP;
+    const cps = [[fa.x + fa.lx * 25, fa.z + fa.lz * 25], [fa.x + fa.lx * 62, fa.z + fa.lz * 62], [fr(kt + 17).x + ft.lx * 108, fr(kt + 17).z + ft.lz * 108],
+      Q(132).map((v, c) => v + [ft.tx, ft.tz][c] * 24), Q(118), Q(96), Q(60), Q(20), Q(-20), Q(-60), Q(-100), Q(-136),
+      [ft.x + 70, SPW.zM], [ft.x + 360, SPW.zM], [ft.x + 700, SPW.zM], [ft.x + 1000, SPW.zM], [SPW.xI - 120, SPW.zM - 8], [SPW.xI - 20, SPW.zI + 22], [SPW.xI + 90, SPW.zI + 8], [SPW.xI + 170, SPW.zI + 7]];
+    const ac = resample(catmull(cps, false, 40), false, 2), a3 = [];
+    for (let i = 0; i < ac.n; i++) {
+      const dx = ac.x[i] - ft.x, dz = ac.z[i] - ft.z, u = dx * ft.lx + dz * ft.lz, side = Math.abs(dx * ft.tx + dz * ft.tz);
+      a3.push([ac.x[i], ac.z[i], H0 + 0.3 - (side < 6 && u < 100 && u > -90 ? depth(u) : 0)]);
+    }
+    const acc = lay(a3, { hw: 5, surf: SURF.ASPHALT, blend: 60, name: RG.access, access: true });
+    // the interstate: three lanes each way, dead flat and dead straight for 20 miles, and the roundabout at the end
+    const isl = []; for (let x = SPW.xI; x <= SPW.xE + 0.01; x += 25) isl.push([x, SPW.zI, H0 + 0.3]);
+    lay(isl, { hw: 12, surf: SURF.ASPHALT, blend: 90, name: RG.interstate, interstate: true, far: true, tex: 'interstate' });
+    { const RR = 55, cx = SPW.xE + RR, rp = []; for (let k = 0; k < 172; k++) { const a = Math.PI + k / 172 * Math.PI * 2; rp.push([cx + Math.cos(a) * RR, SPW.zI - Math.sin(a) * RR]); }
+      const r = resample(rp, true, 2); roads.push({ ...r, h: new Float32Array(r.n).fill(H0 + 0.3), closed: true, hw: 6, surf: SURF.ASPHALT, blend: 30, name: RG.farTown + ' roundabout', far: true, noTraffic: true }); }
+    return { kApex, kEnd, kt, ft, k0, k1, pitO, tanB, acc, F0, F1, DIP, depth, zF };
+  }
   // main loop road (asphalt)
-  {
+  if (!SPEED) {
     const K = 18, cps = [];
     for (let i = 0; i < K; i++) {
       const a = i / K * Math.PI * 2;
@@ -226,7 +301,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     roads.push({ ...s, h, closed: true, hw: 5, surf: SURF.ASPHALT, blend: 210, name: RG.ring });
   }
   // dirt trail over the central shoulder
-  {
+  if (!SPEED) {
     const L = roads[0], iA = 0, iB = Math.floor(L.n * (RG.trailEnd ?? 0.52));
     const A = [L.x[iA], L.z[iA]], B = [L.x[iB], L.z[iB]];
     const dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz), px = -dz / len, pz = dx / len;
@@ -308,13 +383,29 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   const roadGap = (x, z) => { let m = 1e18; for (const road of roads) for (let i = 0; i < road.n; i += 4) { const d = (road.x[i] - x) ** 2 + (road.z[i] - z) ** 2; if (d < m) m = d; } return Math.sqrt(m); };
   const shoulders = [], pads = [], places = { sites: [], garages: [], lines: {} };
   const beside = (f, side, d) => [f.x + f.lx * side * d, f.z + f.lz * side * d];
-  [[RG.garages[0], 0.03], [RG.garages[1], 0.56]].forEach(([name, frac]) => {
+  if (SPEED) {
+    // Trackside Garage on the boulevard's main street, the Infield Garage off the pit lane; pickups in town, at the
+    // interstate's truck stop and grain elevator and out on the ranch road
+    const near = (road, x, z) => { let b = 0, bd = 1e18; for (let i = 0; i < road.n; i++) { const d = (road.x[i] - x) ** 2 + (road.z[i] - z) ** 2; if (d < bd) { bd = d; b = i; } } return b; };
+    [[RG.garages[0], 3, 200, SPW.zM, -1], [RG.garages[1], 2, SPW.C[0] - 130, SPW.C[1] + SPW.R - 25, 1]].forEach(([name, r, tx, tz, side]) => {
+      const road = roads[r], idx = near(road, tx, tz), f = frame(road, idx);
+      shoulders.push({ r, idx, side, f, len: 17, width: 27 });
+      const [x, z] = beside(f, side, road.hw + 11), [bx, bz] = beside(f, side, road.hw + 27);
+      places.garages.push({ name, idx, side, x, z, yaw: f.yaw, bx, bz, byaw: Math.atan2(-f.lx * side, -f.lz * side), road: r });
+    });
+    [[3, 680, SPW.zM, 1], [4, 1750, SPW.zI, -1], [4, 1300, SPW.zI, 1], [1, 0.5], [1, 0.14]].forEach(([r, a, b, sd], k) => {
+      const road = roads[r], idx = b === undefined ? Math.floor(road.n * a) : near(road, a, b), f = frame(road, idx), side = sd ?? (k % 2 ? 1 : -1);
+      shoulders.push({ r, idx, side, f, len: 9, width: 13 });
+      const [x, z] = beside(f, side, road.hw + 3), [hutX, hutZ] = beside(f, side, road.hw + 18);
+      places.sites.push({ name: RG.sites[k], x, z, wild: r === 1, hutX, hutZ, yaw: f.yaw });
+    });
+  } else [[RG.garages[0], 0.03], [RG.garages[1], 0.56]].forEach(([name, frac]) => {
     const idx = flattest(ring, frac, 40), f = frame(ring, idx), side = gentler(f);
     shoulders.push({ r: 0, idx, side, f, len: 17, width: 27 });
     const [x, z] = beside(f, side, ring.hw + 11), [bx, bz] = beside(f, side, ring.hw + 27);
     places.garages.push({ name, idx, side, x, z, yaw: f.yaw, bx, bz, byaw: Math.atan2(-f.lx * side, -f.lz * side) });
   });
-  [0.14, 0.30, 0.44, 0.66, 0.82].map((f, k) => [RG.sites[k], f]).forEach(([name, frac], k) => {
+  if (!SPEED) [0.14, 0.30, 0.44, 0.66, 0.82].map((f, k) => [RG.sites[k], f]).forEach(([name, frac], k) => {
     const idx = Math.floor(ring.n * frac), f = frame(ring, idx), side = k % 2 ? 1 : -1;
     shoulders.push({ r: 0, idx, side, f, len: 9, width: 13 });
     const [x, z] = beside(f, side, ring.hw + 3), [hutX, hutZ] = beside(f, side, ring.hw + 18);
@@ -340,14 +431,19 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     places.lines.outer = { road: ri, idx: flattest(loop, 0.32, 30) };   // start and finish of the outer loop's race
   }
   // pull-in where the off-road time trial starts (its checkpoints are chosen further down, once the ground is shaped)
-  {
+  if (SPEED) {   // beside the ranch road near Trackside
+    const idx = Math.floor(trail.n * 0.05), f = frame(trail, idx);
+    shoulders.push({ r: 1, idx, side: 1, f, len: 10, width: 16 });
+    const [x, z] = beside(f, 1, trail.hw + 13);
+    places.trial = { x, z, yaw: Math.atan2(-f.lx, -f.lz), idx, gates: [] };
+  } else {
     const idx = flattest(ring, 0.36, 30), f = frame(ring, idx);
     shoulders.push({ r: 0, idx, side: -1, f, len: 10, width: 16 });
     const [x, z] = beside(f, -1, ring.hw + 13);
     places.trial = { x, z, yaw: Math.atan2(-f.lx, -f.lz), idx, gates: [] };
   }
   // start and finish lines
-  places.lines.ring = { road: 0, idx: flattest(ring, 0.07, 30) };
+  places.lines.ring = { road: 0, idx: SPEED ? SP.kApex : flattest(ring, 0.07, 30) };
   places.lines.dashStart = { road: 1, idx: 30 };
   places.lines.dashEnd = { road: 1, idx: trail.n - 31 };
   const shoulderAt = (r, road, s, x, z) => {   // extra flat width beside the road at sample s, on the side this point lies on
@@ -367,6 +463,10 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   const pre = OUTER && SEA !== null ? Float32Array.from(heights) : null;   // the ground before the roads, for the sea under new roads
   const roadDist = new Float32Array(V * V).fill(1e9);
   for (const road of roads) road.ref = new Int32Array(V * V).fill(-1);
+  for (const road of roads) if (road.bank) {        // unit left vectors, for the banked bed
+    road.lx = new Float32Array(road.n); road.lz = new Float32Array(road.n);
+    for (let i = 0; i < road.n; i++) { const a = (i - 1 + road.n) % road.n, b = (i + 1) % road.n, tx = road.x[b] - road.x[a], tz = road.z[b] - road.z[a], l = Math.hypot(tx, tz); road.lx[i] = tz / l; road.lz[i] = -tx / l; }
+  }
   const stamps = roads.map((road) => {
     const D = road.blend, d2 = new Float32Array(V * V).fill(1e12), idx = new Int32Array(V * V).fill(-1);
     const R = Math.ceil(D / CELL);
@@ -394,13 +494,27 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       const inner = road.hw + 6 + extra, a = 1 - smooth((d - inner) / (road.blend - inner));
       const wgt = a / (1 - a + (r === 0 || roads[r].outer ? 1e-5 : 1e-3));          // the ring road has the last word on its own bed
       // the bed sits well under the road ribbon, and only a small step below it beside the road
-      wSum += wgt; tSum += wgt * (road.h[st.idx[v]] - (d < road.hw + 1 ? 0.3 : 0.14)); keep *= 1 - a;
+      const si = st.idx[v], tilt = road.bank ? Math.max(-road.hw, Math.min(road.hw, (x - road.x[si]) * road.lx[si] + (z - road.z[si]) * road.lz[si])) * road.bank[si] : 0;
+      wSum += wgt; tSum += wgt * (road.h[si] + tilt - (d < road.hw + 1 ? 0.3 : 0.14)); keep *= 1 - a;
       if (d < road.hw + 8) road.ref[v] = st.idx[v];
       const de = Math.max(0, d - extra); if (de < roadDist[v]) roadDist[v] = de;
     }
     if (wSum > 0) heights[v] = heights[v] * keep + (tSum / wSum) * (1 - keep);
   }
 
+  // The speedway tunnel: cut the boulevard's trench down to its floor under the pit lane and the track (the bridge
+  // finder below then leaves both standing on decks over it)
+  if (SPEED) {
+    const acc = SP.acc, R = Math.ceil((acc.hw + 4) / CELL);
+    for (let s = 0; s < acc.n; s++) {
+      if (acc.h[s] > SPW.H0 + 0.25) continue;
+      const ci = Math.round((acc.x[s] + HALF) / CELL), cj = Math.round((acc.z[s] + HALF) / CELL);
+      for (let j = Math.max(0, cj - R); j <= Math.min(N, cj + R); j++) for (let i = Math.max(0, ci - R); i <= Math.min(N, ci + R); i++) {
+        const v = j * V + i, d = Math.hypot(i * CELL - HALF - acc.x[s], j * CELL - HALF - acc.z[s]);
+        if (d < acc.hw + 1.5 && heights[v] > acc.h[s] - 0.3) heights[v] = acc.h[s] - 0.3;
+      }
+    }
+  }
   // Where an outer road crosses the sea, put the sea floor back under it, so the road stands on a bridge, not a dam.
   if (pre) for (const road of roads) {
     if (!road.outer && !road.spoke) continue;
@@ -544,7 +658,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   trail.from = t0; trail.to = t1; ring.from = 0; ring.to = ring.n - 1;
   for (const road of roads) {     // the outer loop and its spokes (trimmed where a spoke runs onto the road at its end)
     if (road === ring || road === trail) continue;
-    if (road.closed) { road.from = 0; road.to = road.n - 1; continue; }
+    if (road.closed || SPEED) { road.from = 0; road.to = road.n - 1; continue; }
     const loop = roads.find((q) => q.outer), gap = (L, x, z) => { let m = 1e9; for (let i = 0; i < L.n; i += 2) m = Math.min(m, Math.hypot(L.x[i] - x, L.z[i] - z)); return m; };
     let a = 0, b = road.n - 1;
     while (a < road.n - 2 && gap(ring, road.x[a], road.z[a]) < ring.hw - 0.6) a++;
@@ -571,11 +685,11 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   world.ground = gridAt;
   // bridges: stretches of road standing more than a metre over the ground below
   world.bridges = [];
-  if (rivers.length || pre) roads.forEach((road, r) => {
+  if (rivers.length || pre || SPEED) roads.forEach((road, r) => {
     let run = null;
     const flush = () => {
       if (!run) return;
-      const b = { road: r, i0: Math.max(road.from, run[0] - 3), i1: Math.min(road.to, run[1] + 3) }; world.bridges.push(b); run = null;
+      const b = { road: r, i0: Math.max(road.from, run[0] - 3), i1: Math.min(road.to, run[1] + 3), tunnel: SPEED }; world.bridges.push(b); run = null;
       road.deck = road.deck || new Uint8Array(road.n); for (let i = b.i0; i <= b.i1; i++) road.deck[i] = 1;
     };
     for (let i = road.from; i <= road.to; i++) {
@@ -585,7 +699,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   });
 
   // project a point onto a road near sample s; returns lateral distance, writes height + tangent
-  const proj = { h: 0, tx: 0, tz: 1, slope: 0, d: 0, px: 0, pz: 0, i: 0 };
+  const proj = { h: 0, tx: 0, tz: 1, slope: 0, d: 0, px: 0, pz: 0, i: 0, t: 0 };
   const RAMP = 1.6;   // metres of embankment between the road surface and the ground beside it
   function projectRoad(road, s, x, z) {
     let best = 1e9;
@@ -596,14 +710,50 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       const ax = road.x[a], az = road.z[a], ex = road.x[b] - ax, ez = road.z[b] - az, l2 = ex * ex + ez * ez;
       let t = ((x - ax) * ex + (z - az) * ez) / l2; t = t < 0 ? 0 : t > 1 ? 1 : t;
       const d = Math.hypot(x - ax - ex * t, z - az - ez * t);
-      if (d < best) { best = d; const l = Math.sqrt(l2); proj.h = road.h[a] + (road.h[b] - road.h[a]) * t; proj.tx = ex / l; proj.tz = ez / l; proj.slope = (road.h[b] - road.h[a]) / l; proj.px = ax + ex * t; proj.pz = az + ez * t; proj.i = a; }
+      if (d < best) { best = d; const l = Math.sqrt(l2); proj.h = road.h[a] + (road.h[b] - road.h[a]) * t; proj.tx = ex / l; proj.tz = ez / l; proj.slope = (road.h[b] - road.h[a]) / l; proj.px = ax + ex * t; proj.pz = az + ez * t; proj.i = a; proj.t = t; }
     }
     proj.d = best; return best;
   }
 
   // ground query: returns height, fills out.nx/ny/nz and out.surf
   // y (optional): the height asked from; more than 2 m under a bridge deck, the deck is ignored (driving under it)
+  // a road's surface at the point last projected: its centre-line height, tilted where the road is banked (bk: the
+  // rise per metre to the left), out to its edges
+  let bk = 0;
+  const surfaceAt = (road, x, z) => {
+    if (!road.bank) { bk = 0; return proj.h; }
+    const a = proj.i, b = road.closed ? (a + 1) % road.n : Math.min(road.n - 1, a + 1);
+    bk = road.bank[a] + (road.bank[b] - road.bank[a]) * proj.t;
+    const lat = (x - proj.px) * proj.tz - (z - proj.pz) * proj.tx;
+    return proj.h + Math.max(-road.hw, Math.min(road.hw, lat)) * bk;
+  };
+  // past the map's east edge (the speedway): flat prairie at H0, with the interstate and the roundabout on it
+  const farRoads = roads.filter((q) => q.far), farIdx = new Map(), FB = 16;
+  for (const road of farRoads) for (let i = 0; i < road.n; i += 1) {
+    if (road.x[i] < HALF - 60) continue;
+    const r = Math.ceil((road.hw + RAMP) / FB) + 1, bx = Math.floor(road.x[i] / FB), bz = Math.floor(road.z[i] / FB);
+    for (let a = -r; a <= r; a++) for (let c = -r; c <= r; c++) { const key = (bx + a) * 8192 + (bz + c); let l = farIdx.get(key); if (!l) farIdx.set(key, l = []); if (!l.some((q) => q[0] === road)) l.push([road, i]); }
+  }
+  const farSample = (x, z, out) => {
+    const H = SPW.H0, l = farIdx.get(Math.floor(x / FB) * 8192 + Math.floor(z / FB));
+    if (l) for (const [road, s0] of l) {
+      let s = s0;
+      if (road.interstate) s = Math.max(road.from, Math.min(road.to - 1, Math.round((x - road.x[0]) / road.ds)));
+      const d = projectRoad(road, s, x, z);
+      if (d >= road.hw + RAMP) continue;
+      const t = d <= road.hw ? 0 : (d - road.hw) / RAMP;
+      if (out) {
+        let gx = proj.tx * proj.slope, gz = proj.tz * proj.slope;
+        if (t > 0) { const k = (H - proj.h) / RAMP / d; gx += (x - proj.px) * k; gz += (z - proj.pz) * k; }
+        const il = 1 / Math.hypot(gx, 1, gz); out.nx = -gx * il; out.ny = il; out.nz = -gz * il; out.surf = t < 0.5 ? road.surf : SURF.GRASS;
+      }
+      return proj.h + (H - proj.h) * t;
+    }
+    if (out) { out.nx = 0; out.ny = 1; out.nz = 0; out.surf = SURF.GRASS; }
+    return H;
+  };
   world.sample = function (x, z, out, y) {
+    if (SPEED && x > HALF - 1) return farSample(x, z, out);
     let gx = (x + HALF) / CELL, gz = (z + HALF) / CELL;
     gx = gx < 0 ? 0 : gx > N - 1e-4 ? N - 1e-4 : gx; gz = gz < 0 ? 0 : gz > N - 1e-4 ? N - 1e-4 : gz;
     const i = gx | 0, j = gz | 0, fx = gx - i, fz = gz - j, v = j * V + i;
@@ -615,15 +765,17 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       if (s < 0) continue;
       const hw = roads[r].hw, d = projectRoad(roads[r], s, x, z);
       if (d >= hw + RAMP) continue;
-      if (y !== undefined && roads[r].deck && roads[r].deck[proj.i] && y < proj.h - 2.0) continue;
+      const hs = surfaceAt(roads[r], x, z);
+      if (y !== undefined && roads[r].deck && roads[r].deck[proj.i] && y < hs - 2.0) continue;
       const t = d <= hw || (roads[r].deck && roads[r].deck[proj.i]) ? 0 : (d - hw) / RAMP;   // a bridge deck stays flat out to its walls
       if (out) {
         let gx = proj.tx * proj.slope, gz = proj.tz * proj.slope;
-        if (t > 0) { const k = (hGrid - proj.h) / RAMP / d; gx += (x - proj.px) * k; gz += (z - proj.pz) * k; }
+        if (t > 0) { const k = (hGrid - hs) / RAMP / d; gx += (x - proj.px) * k; gz += (z - proj.pz) * k; }
+        else if (bk) { gx += proj.tz * bk; gz -= proj.tx * bk; }   // (the bank: rising to the left)
         const il = 1 / Math.hypot(gx, 1, gz);
         out.nx = -gx * il; out.ny = il; out.nz = -gz * il; out.surf = t < 0.5 ? roads[r].surf : surf[nv];
       }
-      return proj.h + (hGrid - proj.h) * t;
+      return hs + (hGrid - hs) * t;
     }
     if (out) {
       const dhx = ((h10 - h00) * (1 - fz) + (h11 - h01) * fz) / CELL, dhz = ((h01 - h00) * (1 - fx) + (h11 - h10) * fx) / CELL;
@@ -667,6 +819,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     };
     plant(mulberry32(seed * 31 + 5), count, S0, false);
     if (SIZE > S0) plant(mulberry32(seed * 31 + 77), Math.round(count * (SIZE * SIZE / (S0 * S0) - 1) * 0.8), SIZE, true);
+    if (world.farTrees) world.farTrees();
   };
   // solid things the cars can hit, kept in the same 16 m buckets as the trees
   world.addCollider = function (x, z, rad) {
@@ -678,7 +831,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   for (const s of places.sites) { s.y = world.sample(s.x, s.z); s.hutY = world.sample(s.hutX, s.hutZ); world.addCollider(s.hutX, s.hutZ, 3.3); }
   for (const g of places.garages) {
     g.y = world.sample(g.x, g.z); g.by = world.sample(g.bx, g.bz);
-    const f = g.f = frame(ring, g.idx);
+    const f = g.f = frame(roads[g.road ?? 0], g.idx);
     for (const k of [-4.6, 0, 4.6]) world.addCollider(g.bx + f.tx * k, g.bz + f.tz * k, 5.6);
   }
   for (const key in places.lines) {
@@ -715,17 +868,27 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       for (const half of [0, 0.5]) {
         if (half && i === b.i1) continue;
         const f = frame(road, i), g = half ? frame(road, i + 1) : f, fx = (f.x + g.x) / 2, fz = (f.z + g.z) / 2, fh = (f.h + g.h) / 2;
-        [1, -1].forEach((sg, side) => { if (b.open[side][i - b.i0] || (half && b.open[side][i + 1 - b.i0])) return; const t = world.addCollider(fx + f.lx * sg * (road.hw + 1.95), fz + f.lz * sg * (road.hw + 1.95), 1.1); t.y = fh; t.lo = fh - 3; });
+        [1, -1].forEach((sg, side) => { if (b.tunnel || b.open[side][i - b.i0] || (half && b.open[side][i + 1 - b.i0])) return; const t = world.addCollider(fx + f.lx * sg * (road.hw + 1.95), fz + f.lz * sg * (road.hw + 1.95), 1.1); t.y = fh; t.lo = fh - 3; });
       }
       const f = frame(road, i), drop = f.h - gridAt(f.x, f.z);
       // where the deck is too low to drive under (the ends of the bridge), the space under it is solid
       if ((i - b.i0) % 2 === 0 && drop > 0.8 && drop < 3.4) for (let k = -road.hw - 1; k <= road.hw + 1.01; k += 1.5) { const t = world.addCollider(f.x + f.lx * k, f.z + f.lz * k, 0.95); t.y = f.h - drop; t.hi = f.h - 2.0; }
-      if ((i - b.i0) % 13 === 6 && drop > 3.5) {
+      if ((i - b.i0) % 13 === 6 && drop > 3.5 && !b.tunnel) {
         world.piers.push({ x: f.x, z: f.z, yaw: f.yaw, top: f.h - 1.7, bottom: f.h - drop - 1.5, w: 2 * road.hw + 1 });
         for (let k = -road.hw; k <= road.hw + 0.01; k += 1.5) { const t = world.addCollider(f.x + f.lx * k, f.z + f.lz * k, 0.95); t.y = f.h - drop; t.hi = f.h - 2.4; }
       }
     }
   }
+  // solid: small round stops close together just inside each wall of a box (o: x, z, yaw, w, d), so the walls are where they look
+  function solidBox(o) {
+    const cx = Math.cos(o.yaw), cz = Math.sin(o.yaw), R = 0.9, W = (o.w + 0.3) / 2 - R, D = (o.d + 0.3) / 2 - R;
+    const at = (a, b) => world.addCollider(o.x + cx * a + cz * b, o.z - cz * a + cx * b, R);
+    for (const [L, fixed, along] of [[W, D, true], [W, -D, true], [D, W, false], [D, -W, false]]) {
+      const m = Math.max(1, Math.ceil((2 * L) / 1.2));
+      for (let j = 0; j <= m; j++) { const t = -L + (2 * L * j) / m; if (along) at(t, fixed); else at(fixed, t); }
+    }
+  }
+  world.solidBox = solidBox;
   // ---- towns: houses and shops along the ring road either side of each garage, on whatever ground is there (each
   // building stands on its own plinth, so the ground is not reshaped), plus street lamps and a sign at each end ----
   world.towns = [];
@@ -737,7 +900,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     (opts.towns === false ? [] : RG.towns || []).forEach((name, k) => {
       // the first two round the garages on the ring road, a third (bigger maps) on the outer loop
       const g = k < 2 ? places.garages[k] : places.outerTown; if (!g) return;
-      const road = k < 2 ? ring : roads.find((q) => q.outer), n = road.n, wrap = (i) => ((Math.round(i) % n) + n) % n, f0 = frame(road, g.idx);
+      const road = g.road != null ? roads[g.road] : k < 2 ? ring : roads.find((q) => q.outer), n = road.n, wrap = (i) => ((Math.round(i) % n) + n) % n, f0 = frame(road, g.idx);
       const span = 115, town = { name, x: k < 2 ? g.x : f0.x, z: k < 2 ? g.z : f0.z, road: roads.indexOf(road), from: g.idx - span, to: g.idx + span, buildings: [], lamps: [], signs: [] }, B = town.buildings;
       for (const side of [-1, 1]) for (const row of [0, 1]) {
         let s = g.idx - span + rnd() * 5;
@@ -773,16 +936,85 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
         const f = frame(road, wrap(s)), side = -dir, x = f.x + f.lx * side * (road.hw + 5), z = f.z + f.lz * side * (road.hw + 5);
         town.signs.push({ x, z, y: gridAt(x, z), yaw: Math.atan2(-f.tx * dir, -f.tz * dir) });
       }
-      for (const o of B) {          // solid: small round stops close together just inside each wall, so the walls are where they look
-        const cx = Math.cos(o.yaw), cz = Math.sin(o.yaw), R = 0.9, W = (o.w + 0.3) / 2 - R, D = (o.d + 0.3) / 2 - R;
-        const at = (a, b) => world.addCollider(o.x + cx * a + cz * b, o.z - cz * a + cx * b, R);
-        for (const [L, fixed, along] of [[W, D, true], [W, -D, true], [D, W, false], [D, -W, false]]) {
-          const m = Math.max(1, Math.ceil((2 * L) / 1.2));
-          for (let j = 0; j <= m; j++) { const t = -L + (2 * L * j) / m; if (along) at(t, fixed); else at(fixed, t); }
-        }
-      }
+      for (const o of B) solidBox(o);
       world.towns.push(town);
     });
+  }
+  if (SPEED) speedwayExtras();
+  // The speedway's walls and the land past the map: a concrete wall round the outside of the oval (solid only up at
+  // track level, so the tunnel runs under it), the pit wall, railings along the tunnel's open cuts, Sundown Flats
+  // round the roundabout 20 miles east, mile signs, and world.corridor (the strip of prairie the cars may drive in)
+  function speedwayExtras() {
+    const H = SPW.H0, oval = roads[0], pitR = roads[2], acc = SP.acc;
+    world.speedway = { ...SPW, kApex: SP.kApex, kt: SP.kt, walls: [], pitWall: [], lips: [], grand: [] };
+    const W = world.speedway;
+    for (let i = 0; i < oval.n; i++) for (const half of [0, 0.5]) {
+      const f = frame(oval, i), g = half ? frame(oval, (i + 1) % oval.n) : f, x = (f.x + g.x) / 2, z = (f.z + g.z) / 2;
+      const top = (oval.h[i] + (half ? oval.h[(i + 1) % oval.n] : oval.h[i])) / 2 - oval.hw * (oval.bank[i]);   // the outside edge
+      const t = world.addCollider(x - f.lx * (oval.hw + 0.9), z - f.lz * (oval.hw + 0.9), 0.8); t.y = top; t.lo = top - 3;
+      if (!half) W.walls.push({ x: x - f.lx * (oval.hw + 0.5), z: z - f.lz * (oval.hw + 0.5), y: top, yaw: f.yaw });
+    }
+    // pit wall: between the track's inside edge and the pit lane, where the lane runs at its full 25 m
+    for (let k = SP.k0; k <= SP.k1; k++) {
+      if (SP.pitO(k) < 24.3) continue;
+      const f = frame(oval, ((k % oval.n) + oval.n) % oval.n), x = f.x + f.lx * 14.8, z = f.z + f.lz * 14.8;
+      for (const half of [0, 0.5]) { const t = world.addCollider(x + f.tx * half * oval.ds, z + f.tz * half * oval.ds, 0.55); t.y = H + 0.3; t.lo = H - 2; }
+      W.pitWall.push({ x, z, y: H + 0.3, yaw: f.yaw });
+    }
+    // railings along the tunnel's open cuts, solid only up at ground level
+    const ft = SP.ft;
+    for (let s = 0; s < acc.n; s++) {
+      if (acc.h[s] > H + 0.25) continue;
+      const u = (acc.x[s] - ft.x) * ft.lx + (acc.z[s] - ft.z) * ft.lz;
+      if (u < 33 && u > -15 && !(u < 17.5 && u > 12.5)) continue;   // under the decks (and the gap between them, which keeps its own walls)
+      const f = frame(acc, s);
+      for (const sg of [1, -1]) { const x = f.x + f.lx * sg * (acc.hw + 2.6), z = f.z + f.lz * sg * (acc.hw + 2.6), y = world.ground(x, z); const t = world.addCollider(x, z, 0.6); t.y = y; t.lo = y - 1.4; if (s % 2 === 0) W.lips.push({ x, z, y, yaw: f.yaw }); }
+    }
+    // grandstands on the berm outside the frontstretch (solid boxes), clear of the tunnel
+    for (let k = 20; k < SP.kEnd - 10; k += 34) {
+      const f = frame(oval, k); if (Math.abs(k - SP.kt) < 22) continue;
+      const lat = oval.hw + 20, x = f.x - f.lx * lat, z = f.z - f.lz * lat, o = { x, z, yaw: Math.atan2(f.lx, f.lz), w: 60, d: 22, h: 16, y: world.ground(x, z) };
+      W.grand.push(o); solidBox(o);
+    }
+    // Sundown Flats: a main street along the last half mile of the interstate and buildings round the roundabout
+    const rnd = mulberry32(seed * 71 + 3), xE = SPW.xE, zI = SPW.zI, B = [], town = { name: RG.farTown, x: xE - 150, z: zI, road: 4, from: 0, to: 0, buildings: B, lamps: [], signs: [], far: true };
+    const ist = roads[4]; town.from = ist.n - 300; town.to = ist.n - 1;
+    const free = (o) => B.every((q) => Math.hypot(q.x - o.x, q.z - o.z) > (Math.max(q.w, q.d) + Math.max(o.w, o.d)) / 2 + 1.5);
+    const barn = { x: xE + 55, z: zI - 112, yaw: 0 };
+    for (const side of [-1, 1]) for (const row of [0, 1]) {
+      let x = xE - 620 + rnd() * 6;
+      while (x < xE - 30) {
+        const r = rnd(), kind = row ? (r < 0.75 ? 'house' : 'shed') : r < 0.45 ? 'shop' : r < 0.65 ? 'tall' : 'house';
+        const w = kind === 'tall' ? 12 + rnd() * 5 : kind === 'shed' ? 7 + rnd() * 4 : 9 + rnd() * 6, d = kind === 'shed' ? 6 + rnd() * 2 : 8 + rnd() * 4;
+        const h = kind === 'tall' ? 8.5 + rnd() * 3 : kind === 'shop' ? 3.8 + rnd() * 1.6 : kind === 'shed' ? 3.2 : (rnd() < 0.4 ? 5.8 : 3.1);
+        const lat = ist.hw + 16 + (row ? 24 : 0) + d / 2 + rnd() * 2, o = { x: x + w / 2, z: zI + side * lat, yaw: side > 0 ? Math.PI : 0, w, d, h, kind, lo: H, hi: H, wall: rnd(), roof: rnd(), seed: rnd() };
+        if (free(o)) B.push(o);
+        x += w + 3 + rnd() * (row ? 12 : 6);
+      }
+    }
+    for (let k = 0; k < 14; k++) {
+      const a = Math.PI + 0.42 + k / 14 * (Math.PI * 2 - 0.84), rr = 55 + 6 + 16 + rnd() * 6, w = 10 + rnd() * 6, d = 8 + rnd() * 4;
+      const o = { x: xE + 55 + Math.cos(a) * (rr + d / 2), z: zI - Math.sin(a) * (rr + d / 2), yaw: Math.atan2(Math.cos(a), -Math.sin(a)) + Math.PI, w, d, h: rnd() < 0.3 ? 8 + rnd() * 3 : 3.8 + rnd() * 2, kind: 'shop', lo: H, hi: H, wall: rnd(), roof: rnd(), seed: rnd() };
+      if (Math.hypot(o.x - barn.x, o.z - barn.z) > 26 && !(Math.abs(o.x - barn.x) < 22 && o.z < zI) && free(o)) B.push(o);
+    }
+    for (const o of B) solidBox(o);
+    for (let x = xE - 600; x < xE - 20; x += 16) for (const side of [-1, 1]) town.lamps.push({ x, z: zI + side * (ist.hw + 5), y: H, yaw: side > 0 ? Math.PI : 0 });
+    town.signs.push({ x: xE - 640, z: zI + ist.hw + 6, y: H, yaw: -Math.PI / 2 });
+    world.towns.push(town);
+    places.farBarn = { ...barn, y: H, yaw: Math.atan2(xE + 55 - barn.x, zI - barn.z) };
+    // mile signs both ways: eastbound on the right (miles to go), westbound on the left (miles back to Trackside)
+    W.miles = [];
+    for (let m = 1; m < SPW.miles; m++) { const x = SPW.xI + m * 1609.34; W.miles.push({ x, z: zI + ist.hw + 4, left: SPW.miles - m, yaw: -Math.PI / 2, to: RG.farTown }, { x: x + 40, z: zI - ist.hw - 4, left: m, yaw: Math.PI / 2, to: RG.towns[0] }); }
+    world.corridor = { x0: HALF - 60, x1: xE + 450, z0: zI - 1150, z1: zI + 1150, h: H };
+    world.farTrees = () => {     // clumps of trees out along the corridor
+      const r2 = mulberry32(seed * 13 + 9);
+      for (let k = 0; k < 2600; k++) {
+        const x = HALF + 30 + r2() * (xE - HALF - 800), z = zI + (r2() < 0.5 ? -1 : 1) * (45 + r2() * 1050);
+        if (noise2(x / 300 + 7, z / 300) < 0.1 + r2() * 0.25) continue;
+        const t = { x, z, y: H, s: 0.75 + r2() * 0.9, r: r2() * 6.28 }, key = ((x + HALF) >> 4) * 4096 + ((z + HALF) >> 4);
+        world.trees.push(t); if (!world.treeHash.has(key)) world.treeHash.set(key, []); world.treeHash.get(key).push(t);
+      }
+    };
   }
   // inside a town's built-up part (a building, or the yard round it): trees, bushes and stones keep out
   world.inTown = (x, z) => world.towns.some((t) => Math.hypot(t.x - x, t.z - z) < 420 && t.buildings.some((o) => Math.hypot(o.x - x, o.z - z) < Math.max(o.w, o.d) * 0.5 + 5));

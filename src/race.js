@@ -38,6 +38,19 @@ const REGION_EVENTS = {
     descent: { id: 'ridgeb', name: 'Ridge Return', short: 'Ridge Return', blurb: 'The ridge trail back from the far side, every corner the other way.' },
     scramble: { id: 'cliffs', name: 'Clifftop Scramble', short: 'Scramble', medals: [140, 185, 240], blurb: 'No road and no rivals. Cross the headland through every checkpoint in order and beat the clock. Stay out of the sea.' },
   },
+  // the speedway (build 38): the ring events run on the oval, several laps at a time, against faster rivals
+  speedway: {
+    spots: { ring: 'Oval races', west: 'Ranch Road Run', east: 'Ranch Road Return', trial: 'Prairie Scramble', inter: 'Interstate Run' },
+    ring: { id: 'oval', name: 'Ironhorse Grand Prix', short: 'Grand Prix', laps: 4, tag: 'Oval · tarmac · 4 laps', blurb: 'Four laps of the banked oval against three rivals. Flat out down the straights; lift a little for the 24 degree turns if the car will not hold them.',
+      rivals: [{ num: 23, car: 'coupe', skill: 0.66, vcap: 52, paint: 5 }, { num: 8, car: 'coupe', skill: 0.6, vcap: 50, paint: 1 }, { num: 41, car: 'hatch', skill: 0.66, vcap: 49, paint: 2 }], prize: [2500, 1300, 650, 150] },
+    clock: { id: 'ovalb', name: 'Ironhorse Reverse', short: 'Reverse', laps: 4, tag: 'Oval · tarmac · 4 laps', blurb: 'The oval the wrong way round: right turns all the way, still on the banking. Four laps.',
+      rivals: [{ num: 77, car: 'coupe', skill: 0.64, vcap: 51, paint: 0 }, { num: 12, car: 'coupe', skill: 0.6, vcap: 50, paint: 6 }, { num: 9, car: 'hatch', skill: 0.66, vcap: 48, paint: 3 }], prize: [2500, 1300, 650, 150] },
+    double: { id: 'ovalx', name: 'Ironhorse 200', short: 'Ironhorse 200', laps: 8, tag: 'Oval · tarmac · 8 laps', blurb: 'Eight laps, about twelve miles, against tuned cars. Bring something fast.',
+      rivals: [{ num: 3, car: 'coupe', up: [2, 2, 1, 1], skill: 0.68, vcap: 60, paint: 4 }, { num: 28, car: 'apex', skill: 0.6, vcap: 58, paint: 1 }, { num: 55, car: 'coupe', up: [1, 1, 1, 0], skill: 0.64, vcap: 56, paint: 2 }], prize: [5000, 2600, 1300, 300] },
+    dash: { id: 'ranch', name: 'Ranch Road Run', short: 'Ranch Run', blurb: 'Point to point on the dirt ranch road from Trackside round the west side of the prairie. Three rivals.' },
+    descent: { id: 'ranchb', name: 'Ranch Road Return', short: 'Ranch Return', blurb: 'The ranch road back to Trackside, every corner the other way.' },
+    scramble: { id: 'prairie', name: 'Prairie Scramble', short: 'Scramble', medals: [128, 168, 220], blurb: 'No road and no rivals. Cross the open prairie through every checkpoint in order and beat the clock.' },
+  },
   desert: {
     spots: { ring: 'Basin Loop races', west: 'Canyon Run', east: 'Canyon Return', trial: 'Dune Scramble' },
     ring: { id: 'loop', name: 'Basin Loop Grand Prix', blurb: 'One flat-out lap of the basin loop against three rivals.' },
@@ -62,10 +75,21 @@ export function buildRaces(world) {
   const list = mountainRaces(world).map((d) => ({ ...d, base: d.id })), over = REGION_EVENTS[world.region];
   const all = !over ? list : list.map((d) => {
     const o = over[d.id] || {}, rivals = o.rivals ? d.rivals.map((r, k) => ({ ...r, ...o.rivals[k] })) : d.rivals;
-    return { ...d, ...o, rivals, short: o.short || d.short, base: d.id };
+    return { ...d, ...o, rivals, short: o.short || d.short, base: d.id, dist: o.laps ? d.path.len * o.laps : d.dist };
   });
-  const outer = outerRace(world);
-  return outer ? [...all, outer] : all;
+  const extra = [outerRace(world), interRace(world)].filter(Boolean);
+  return [...all, ...extra];
+}
+
+// the speedway's interstate: a 20 mile time trial from the on-ramp to Sundown Flats, a checkpoint every two miles.
+// The medals want a very fast car (gold: about 250 mph on average).
+function interRace(world) {
+  const road = world.roads.find((r) => r.interstate); if (!road) return null;
+  const path = makePath(road), start = path.at(45), n = 10;
+  const gates = Array.from({ length: n }, (_, k) => { const f = path.at(45 + Math.round((path.n - 60 - 45) * (k + 1) / n)); return { x: f.x, z: f.z, y: f.y, r: 16 }; });
+  return { id: 'inter', base: 'inter', spot: 'inter', name: world.regionDef.interstate + ' Run', short: 'Interstate Run', kind: 'trial', tag: 'Time trial · tarmac · 20 miles',
+    blurb: `Twenty miles of dead straight interstate to ${world.regionDef.farTown}. Pin it. Gold needs about 250 mph all the way, so bring the fastest car you have.`,
+    x: start.x, z: start.z, y: start.y, start: { x: start.x, z: start.z, yaw: start.yaw }, gates, dist: (path.n - 60 - 45) * path.ds, rivals: [], medals: [290, 400, 520], prize: [6000, 3000, 1500] };
 }
 
 // one lap of the outer loop: long (about seven miles), mostly tarmac, out past the third town and the far pickups

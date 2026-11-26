@@ -6,7 +6,7 @@ import { SIZE, HALF, CELL, V, SURF } from './terrain.js';
 
 export const CRATES = 12, CRATE_PAY = 250, CRATE_R = 4.5, BARN_R = 9;
 // the old car hidden in each region (see cars.js)
-export const BARN_CAR = { mountain: 'ridge', desert: 'mesa', coast: 'breeze' };
+export const BARN_CAR = { mountain: 'ridge', desert: 'mesa', coast: 'breeze', speedway: 'endure' };
 // air time: pays on landing after this long off the ground (outside races), and a goal for a really long one
 export const AIR_MIN = 0.9, AIR_GOAL = 2;
 export const airPay = (t) => (t < AIR_MIN ? 0 : Math.round(t * t * 80 / 10) * 10);
@@ -28,18 +28,18 @@ export function addRamps(world, ramps) {
   for (const r of ramps) { r.cx = r.x + r.fx * 9; r.cz = r.z + r.fz * 9; }
   const RR = 13 * 13;
   world.ramps = ramps;
-  world.sample = function (x, z, out) {
+  world.sample = function (x, z, out, y) {
     for (let i = 0; i < ramps.length; i++) {
       const r = ramps[i]; if ((x - r.cx) ** 2 + (z - r.cz) ** 2 > RR) continue;
       const k = rampRise(r, x, z); if (k <= 0) continue;
-      const h = base(x, z, out) + k;
+      const h = base(x, z, out, y) + k;
       if (out) {
-        const gx = (base(x + E, z) + rampRise(r, x + E, z) - h) / E, gz = (base(x, z + E) + rampRise(r, x, z + E) - h) / E, il = 1 / Math.hypot(gx, 1, gz);
+        const gx = (base(x + E, z, undefined, y) + rampRise(r, x + E, z) - h) / E, gz = (base(x, z + E, undefined, y) + rampRise(r, x, z + E) - h) / E, il = 1 / Math.hypot(gx, 1, gz);
         out.nx = -gx * il; out.ny = il; out.nz = -gz * il; out.surf = SURF.ASPHALT;
       }
       return h;
     }
-    return base(x, z, out);
+    return base(x, z, out, y);
   };
 }
 
@@ -68,6 +68,7 @@ export function placeFinds(world, races = []) {
     barn = pick(5000, (x, z) => { const d = road(x, z); return d > lo && d < hi && dry(x, z) && easy(x, z, lim, 24) && clear(x, z, 260, 70); });
     if (barn) break;
   }
+  if (P.farBarn) barn = { x: P.farBarn.x, z: P.farBarn.z };   // the speedway: in Sundown Flats, 20 miles out
   if (!barn) barn = { x: P.trial.x, z: P.trial.z };
   barn.y = world.sample(barn.x, barn.z); barn.car = BARN_CAR[world.region] || BARN_CAR.mountain;
   { const nr = world.nearestRoad(barn.x, barn.z); barn.yaw = Math.atan2(nr.x - barn.x, nr.z - barn.z); }   // its open side faces the way in

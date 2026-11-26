@@ -116,6 +116,7 @@ Pictures for judging the look (not pass or fail):
     node tests/brakes.mjs [show]          # 60-0 and 100-0 mph distances, lift-off roll, turn-in time for every car
     node tests/solid.mjs                  # buildings, bridge piers and railings stop the car; it can drive under a bridge
     node tests/cruiseui.cjs               # auto throttle: holds 80 mph, more throttle overrides, brake cancels
+    node tests/speedwayui.cjs [outdir]    # bonus speedway map in the page: races, tunnel under the track, interstate, pictures
     REGION=coast node tests/schoolui.cjs [outdir]  # driving tests in the page: list, school car, pay once, own car back
     node tests/garage8.cjs [outdir]  # garage with every car on an upright and a sideways phone (pictures)
     node tests/carshots.cjs [ids] [six|one|two|side|rear|top]  # the car models alone on a pad (bundles tests/viewer/entry.js)
@@ -228,6 +229,16 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   off at 60 rolls about 150 m (was 300 to 580). Key and touch steering builds to full lock in 0.18 to 0.54 s (was 0.25
   to 0.75) and every car's `steerRate` is x1.3 (`STEER_QUICK`). `STOP_HOLD` went from 0.6 to 0.75 s because the
   harder stop spends less time under 2.5 m/s. School medals recalibrated. Test: `node tests/brakes.mjs [show]`.
+- Bonus map and cars (build 38, Michael 2026-11-26): `REGIONS.speedway` "Ironhorse Speedway" (`bonus: true`, so it is
+  not in `REGION_IDS`; `BONUS_IDS` lists it). It opens, with the prize hypercar `hyper` (Zenith 300), once every goal of
+  the three main maps is done (`bonusOpen(save)` in goals.js, `unlockBonus` in main.js, saved as `bonus`); the menu
+  has a test button "Open the speedway and hypercar (test)". Layout `speedway` in terrain.js (`SPW`): a banked
+  1.5 mile oval (road 0, `bank` per sample, 5 to 24 degrees, surface from `surfaceAt`), Ranch Road (dirt), Pit Lane,
+  Speedway Boulevard dipping through a tunnel under the oval and pit lane out to Trackside, and Interstate 300 (road 4,
+  `far`) running 20 miles east past the heightfield edge to Sundown Flats. Past the edge the ground is flat
+  (`farSample`, `world.corridor` keeps the car inside the strip). The classic endurance racer `endure` (Vortex 91
+  Prototype) is the hidden barn car in Sundown Flats. Every `world.sample` wrapper must pass the 4th argument (the
+  asker's y): finds.js's ramp layer dropped it, so in the page cars under a deck or in the tunnel were lifted onto it.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

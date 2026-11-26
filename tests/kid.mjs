@@ -27,7 +27,7 @@ function race(def, carId, skill) {
   const car = new Vehicle(w, buildSpec(carId)), rc = new Race(w, def, car, KID_LEVEL), out = {};
   const bot = new Driver(car, def.path, { skill, vcap: 99, lane: rc.track.off, idx: rc.track.idx, prog: rc.track.prog });
   let resets = 0; const ob = bot.respawn.bind(bot); bot.respawn = () => { resets++; ob(); };
-  while (rc.state !== 'done' && rc.t < 900) {
+  while (rc.state !== 'done' && rc.t < 1200) {
     rc.update(1 / 60); if (rc.state === 'run') bot.think(1 / 60, rc.all);
     const inp = kidInput(car, { ...bot.input, throttle: 0, brake: 0, handbrake: false }, out);
     for (let k = 0; k < 2; k++) { car.step(dt, rc.input(inp)); rc.step(dt); }
@@ -47,7 +47,7 @@ assert.ok(wins >= n * 0.6, 'kid mode races are winnable');
   const def = races.find((r) => r.base === 'scramble'), car = new Vehicle(w, buildSpec('hatch')), rc = new Race(w, def, car, KID_LEVEL), out = {};
   const pts = []; for (const l of plan(w, [def.start, ...def.gates])) for (const p of l.path) pts.push(p);
   let k = 0, stuck = 0;
-  while (rc.state !== 'done' && rc.t < 900) {
+  while (rc.state !== 'done' && rc.t < 1200) {
     rc.update(1 / 60);
     while (k < pts.length - 1 && Math.hypot(pts[k].x - car.pos.x, pts[k].z - car.pos.z) < Math.max(14, car.speed * 0.9)) k++;
     const g = rc.next; let tx = pts[k].x, tz = pts[k].z; if (g && Math.hypot(g.x - car.pos.x, g.z - car.pos.z) < 40) { tx = g.x; tz = g.z; }

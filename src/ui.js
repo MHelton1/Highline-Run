@@ -1,5 +1,5 @@
 // Menus drawn over the 3D view: the garage, race offers and results, and the pause menu.
-import { REGIONS, REGION_IDS } from './regions.js';
+import { REGIONS, REGION_IDS, BONUS_IDS } from './regions.js';
 import { NITRO } from './stunts.js';
 import { CARS, CAR_IDS, FIND_IDS, PRIZE_IDS, PAINTS, UPGRADES, TUNING, upgradeCost, stockTune, buildSpec, measure, rate } from './cars.js';
 import { MEDALS, PLACES, LEVELS, KID_LEVEL, rankKey, prizes, medals } from './race.js';
@@ -85,7 +85,7 @@ export function createUI(g) {
     };
     const out = [];
     if (tab === 'cars') {
-      const hidden = FIND_IDS.filter((id) => !s.cars[id]).length;
+      const hidden = FIND_IDS.filter((id) => !s.cars[id] && (CARS[id].find !== 'speedway' || g.region === 'speedway')).length;
       for (const id of [...CAR_IDS, ...FIND_IDS.filter((f) => s.cars[f]), ...PRIZE_IDS.filter((f) => s.cars[f])]) {
         const cc = CARS[id], mine = s.cars[id], now = id === s.car;
         out.push(el('button', { id: 'g-car-' + id, type: 'button', class: 'caritem', 'aria-pressed': String(id === sel), onclick: () => { sel = id; g.audio.click(); g.showCar(id); draw(); } },
@@ -94,9 +94,9 @@ export function createUI(g) {
           id === sel && el('span', { class: 'ci-drive' }, cc.blurb)));
         if (id === sel) out.push(...carActions());          // paint and buy or drive sit right under the chosen car
       }
-      if (hidden) out.push(el('p', { class: 'note', id: 'g-hidden' }, `${hidden === FIND_IDS.length ? 'Three' : hidden === 1 ? 'One more' : hidden === 2 ? 'Two more' : hidden} ${hidden === 1 ? 'car is' : 'cars are'} hidden out in the wild, one in each region. They are not for sale: find them. Goals in the menu has a hint.`));
+      if (hidden) out.push(el('p', { class: 'note', id: 'g-hidden' }, `${hidden === 3 ? 'Three' : hidden === 4 ? 'Four' : hidden === 1 ? 'One more' : hidden === 2 ? 'Two more' : hidden} ${hidden === 1 ? 'car is' : 'cars are'} hidden out in the wild, one in each region. They are not for sale: find them. Goals in the menu has a hint.`));
       // the other regions, reached from any garage
-      for (const rid of REGION_IDS) if (rid !== g.region) {
+      for (const rid of [...REGION_IDS, ...(g.bonusOpen() ? BONUS_IDS : [])]) if (rid !== g.region) {
         out.push(el('div', { class: 'travel' }, el('span', { class: 'lbl' }, 'Travel'),
           el('p', { class: 'note' }, `${REGIONS[rid].name}: ${REGIONS[rid].blurb} Your cash, cars and parts come with you.`),
           el('button', { id: 'g-travel-' + rid, type: 'button', class: 'btn', onclick: () => { g.audio.click(); g.travel(rid); } }, 'Drive to ' + REGIONS[rid].name)));
@@ -258,6 +258,7 @@ export function createUI(g) {
         el('button', { id: 'dlg-time', type: 'button', class: 'btn', onclick: () => { g.nextTime(); pause(); focusOn($('dlg-time')); } }, 'Time: ' + opt.tod),
         el('button', { id: 'dlg-fps', type: 'button', class: 'btn', onclick: () => { g.toggleFps(); pause(); focusOn($('dlg-fps')); } }, 'Frame rate ' + (opt.fps ? 'shown' : 'hidden')),
         el('button', { id: 'dlg-cash', type: 'button', class: 'btn', onclick: () => { g.testCash(); pause(); focusOn($('dlg-cash')); } }, 'Add $10,000 test cash'),
+        !g.bonusOpen() && el('button', { id: 'dlg-bonus', type: 'button', class: 'btn', onclick: () => { g.testBonus(); pause(); focusOn($('dlg-cash')); } }, 'Open the speedway and hypercar (test)'),
         g.fullInfo().can && el('button', { id: 'dlg-full', type: 'button', class: 'btn', 'aria-pressed': String(g.fullInfo().on), onclick: () => { g.toggleFull(); focusOn($('dlg-full')); } }, 'Full screen ' + (g.fullInfo().on ? 'on' : 'off')),
         g.fullInfo().desk && el('button', { id: 'dlg-exit', type: 'button', class: 'btn', onclick: () => g.quit() }, 'Exit game'),
         el('button', { id: 'dlg-wipe', type: 'button', class: 'btn danger', onclick: () => { if (!armed) { armed = true; $('dlg-wipe').textContent = 'Press again to erase everything'; } else g.resetProgress(); } }, 'Erase saved progress')),

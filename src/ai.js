@@ -68,7 +68,7 @@ export class Driver {
     }
   }
   get prog() { return this.track.prog; }
-  respawn() { const f = this.path.at(this.track.idx, this.f); this.car.place(f.x, f.z, f.yaw); this.stuck = this.flip = 0; this.lane = 0; }
+  respawn() { const f = this.path.at(this.track.idx, this.f); this.car.place(f.x, f.z, f.yaw, undefined, f.y + 0.5); this.stuck = this.flip = 0; this.lane = 0; }
   // cars: every other car in the race (Vehicle objects)
   think(dt, cars, racing = true) {
     const c = this.car, p = this.path, n = p.n, inp = this.input, tr = this.track, sp = c.speed, lim = p.hw - 1.25;

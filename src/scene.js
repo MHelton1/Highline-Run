@@ -35,6 +35,7 @@ function grainTexture() {
 
 // weather on the ground: how white the open ground is under fresh snow (set by the weather each frame)
 export const GROUND_FX = { snow: { value: 0 } };
+const PRAIRIE = [[0.42, 0.45, 0.21], [0.58, 0.54, 0.30], [0.52, 0.47, 0.30], [0.50, 0.44, 0.36], [0.62, 0.56, 0.47], [0.93, 0.95, 0.98], [0.52, 0.46, 0.38], 400];
 export function buildTerrain(world, scene) {
   const { heights, normals, snowT, rockT, roadDist, noise } = world;
   const mat = new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide }), grain = grainTexture();   // (both sides, for the skirts)
@@ -70,9 +71,9 @@ export function buildTerrain(world, scene) {
     return new THREE.BufferAttribute(new Uint16Array(out), 1);
   };
   const indexAttr = grid(1), levels = [indexAttr, grid(2), grid(4)];
-  const dry = world.regionDef && world.regionDef.ground === 'desert', sea = world.sea;
+  const dry = world.regionDef && world.regionDef.ground === 'desert', sea = world.sea, prairie = world.regionDef && world.regionDef.ground === 'plains';
   // mountain: grass, tundra up high, grey rock, snow. desert: sand, desert varnish up high, red rock in bands, no snow.
-  const [gA, gB, tundra, rA, rB, snow, gravel, tH] = dry
+  const [gA, gB, tundra, rA, rB, snow, gravel, tH] = prairie ? PRAIRIE : dry
     ? [[0.70, 0.52, 0.35], [0.80, 0.63, 0.44], [0.62, 0.42, 0.29], [0.56, 0.27, 0.16], [0.74, 0.44, 0.28], [0.93, 0.95, 0.98], [0.64, 0.53, 0.41], 120]
     : sea != null ? [[0.30, 0.45, 0.18], [0.45, 0.51, 0.24], [0.44, 0.46, 0.28], [0.44, 0.42, 0.38], [0.58, 0.55, 0.50], [0.93, 0.95, 0.98], [0.45, 0.40, 0.33], 150]
     : [[0.27, 0.40, 0.17], [0.40, 0.46, 0.20], [0.47, 0.44, 0.29], [0.40, 0.38, 0.36], [0.52, 0.48, 0.43], [0.93, 0.95, 0.98], [0.45, 0.40, 0.33], 215];
@@ -117,7 +118,19 @@ function roadTexture(kind) {
   const g = c.getContext('2d'), rnd = rng(kind * 77 + 5);
   const speck = (n, a, b, s) => { for (let i = 0; i < n; i++) { g.fillStyle = rnd() > 0.5 ? a : b; const r = 1 + rnd() * s; g.fillRect(rnd() * W, rnd() * H, r, r); } };
   const band = (x, w, col) => { const gr = g.createLinearGradient(x - w, 0, x + w, 0); gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(0.5, col); gr.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = gr; g.fillRect(x - w, 0, 2 * w, H); };
-  if (kind === SURF.ASPHALT) {
+  if (kind === 'track') {          // the oval: dark, worn racing groove, a white line at the inside edge of the racing surface and a blue apron edge
+    g.fillStyle = '#4a4c51'; g.fillRect(0, 0, W, H);
+    speck(12000, 'rgba(255,255,255,0.06)', 'rgba(0,0,0,0.12)', 1.6);
+    for (const x of [96, 150]) band(x, 30, 'rgba(14,14,16,0.25)');
+    g.fillStyle = '#e8e6de'; g.fillRect(48, 0, 5, H); g.fillStyle = '#2f5fae'; g.fillRect(4, 0, 8, H); g.fillStyle = '#e8e6de'; g.fillRect(W - 8, 0, 6, H);
+  } else if (kind === 'interstate') {   // six lanes: white edge lines, dashed lane lines, a double yellow down the middle
+    g.fillStyle = '#5e6065'; g.fillRect(0, 0, W, H);
+    speck(9000, 'rgba(255,255,255,0.07)', 'rgba(0,0,0,0.1)', 1.6);
+    g.fillStyle = '#e8e4d6'; g.fillRect(8, 0, 4, H); g.fillRect(W - 12, 0, 4, H);
+    g.fillStyle = '#e3b23a'; g.fillRect(122, 0, 4, H); g.fillRect(130, 0, 4, H);
+    g.fillStyle = '#e8e4d6'; for (const x of [47, 86, 168, 207]) g.fillRect(x, 0, 3, 200);
+    for (const x of [30, 70, 108, 148, 188, 226]) band(x, 9, 'rgba(18,18,20,0.16)');
+  } else if (kind === SURF.ASPHALT) {
     g.fillStyle = '#5b5d62'; g.fillRect(0, 0, W, H);
     speck(9000, 'rgba(255,255,255,0.07)', 'rgba(0,0,0,0.1)', 1.6); speck(260, 'rgba(255,255,255,0.05)', 'rgba(0,0,0,0.07)', 7);
     for (const x of [70, 106, 150, 186]) band(x, 16, 'rgba(18,18,20,0.2)');                             // where the wheels run
@@ -142,17 +155,17 @@ export function buildRoads(world, scene) {
       const i = road.closed ? (a0 + k) % road.n : a0 + k;
       const p = road.closed ? (i - 1 + road.n) % road.n : Math.max(a0, i - 1), q = road.closed ? (i + 1) % road.n : Math.min(a1, i + 1);
       let tx = road.x[q] - road.x[p], tz = road.z[q] - road.z[p]; const l = Math.hypot(tx, tz); tx /= l; tz /= l;
-      const lx = tz, lz = -tx, y = road.h[i] + 0.03, vv = k * road.ds / 12, hw = road.hw;
-      // skirtL, edgeL, edgeR, skirtR
-      pos.push(road.x[i] + lx * (hw + 1.2), y - 0.9, road.z[i] + lz * (hw + 1.2), road.x[i] + lx * hw, y, road.z[i] + lz * hw,
-        road.x[i] - lx * hw, y, road.z[i] - lz * hw, road.x[i] - lx * (hw + 1.2), y - 0.9, road.z[i] - lz * (hw + 1.2));
+      const lx = tz, lz = -tx, y = road.h[i] + 0.03, vv = k * road.ds / 12, hw = road.hw, tilt = road.bank ? road.bank[i] * hw : 0;
+      // skirtL, edgeL, edgeR, skirtR (a banked road: the left edge higher by bank x hw, the right lower)
+      pos.push(road.x[i] + lx * (hw + 1.2), y + tilt - 0.9, road.z[i] + lz * (hw + 1.2), road.x[i] + lx * hw, y + tilt, road.z[i] + lz * hw,
+        road.x[i] - lx * hw, y - tilt, road.z[i] - lz * hw, road.x[i] - lx * (hw + 1.2), y - tilt - 0.9, road.z[i] - lz * (hw + 1.2));
       uv.push(0.02, vv, 0, vv, 1, vv, 0.98, vv); nor.push(0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0);
       if (k < cnt - 1) { const b = k * 4; for (let s = 0; s < 3; s++) idx.push(b + s, b + s + 1, b + s + 4, b + s + 1, b + s + 5, b + s + 4); }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
     g.setIndex(idx);
-    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: roadTexture(road.surf), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: road.surf === SURF.ASPHALT ? -2 : -1, polygonOffsetUnits: -2 }));
+    const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: roadTexture(road.tex || road.surf), side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: road.surf === SURF.ASPHALT ? -2 : -1, polygonOffsetUnits: -2 }));
     m.receiveShadow = true; m.frustumCulled = false; scene.add(m);
   }
 }
@@ -356,6 +369,7 @@ void main() {
 export const SKY = { top: 0x2a6fd6, mid: 0x7db4ee, hor: 0xd7e6f2, fog: 0xcfdfec, ground: 0x4f5a3a, envTop: 0x6a9be0, envMid: 0xa3caf0, light: [0xcfe2ff, 0x5a5340], dust: [0xbfbfbf, 0xb89468, 0x9a9a72, 0xa39a8e, 0xffffff] };
 export const SKIES = { mountain: SKY,
   coast: { top: 0x2a72d8, mid: 0x80b8ee, hor: 0xdbe9f3, fog: 0xd3e3ee, ground: 0x4f5a3a, envTop: 0x6a9be0, envMid: 0xa3caf0, light: [0xd2e6ff, 0x55603f], dust: [0xbfbfbf, 0xcdb88e, 0x9a9a72, 0xa39a8e, 0xffffff] },
+  speedway: { top: 0x2766d0, mid: 0x7fb2ea, hor: 0xe4e3d6, fog: 0xdcdccc, ground: 0x6a6a40, envTop: 0x6a9be0, envMid: 0xa8c8ea, light: [0xd6e4fa, 0x6a6242], dust: [0xbfbfbf, 0xb89468, 0xa59a6a, 0xa39a8e, 0xffffff] },
   desert: { top: 0x2e6fcf, mid: 0x86b8e6, hor: 0xeadcc6, fog: 0xe3d2b8, ground: 0x8a6446, envTop: 0x6f9fde, envMid: 0xb4cbe2, light: [0xd8e4f6, 0x7d5a40], dust: [0xc4b8a8, 0xc29a6a, 0xd2b07e, 0xb07a5a, 0xffffff] } };
 // The sea: one wide sheet of water at the region's sea level, out past the horizon.
 export function buildSea(world, scene) {
@@ -402,7 +416,7 @@ export function buildBridges(world, scene) {
   for (const b of world.bridges) {
     const road = world.roads[b.road], hw = road.hw, deck = [], dIdx = [], wall = [], wIdx = [];
     for (let i = b.i0, k = 0; i <= b.i1; i++, k++) {
-      const f = world.frame(road, i), y = f.h + 0.03, L = (d, h) => [f.x + f.lx * d, y + h, f.z + f.lz * d];
+      const f = world.frame(road, i), y = f.h + 0.03, bk = road.bank ? road.bank[i] : 0, L = (d, h) => [f.x + f.lx * d, y + h + Math.max(-hw, Math.min(hw, d)) * bk, f.z + f.lz * d];
       // deck body: left side, bottom, right side
       deck.push(...L(hw + 1.25, -0.85), ...L(hw + 1.25, -1.7), ...L(-hw - 1.25, -1.7), ...L(-hw - 1.25, -0.85));
       // walls: outer face, top, inner face, for each side
@@ -413,7 +427,7 @@ export function buildBridges(world, scene) {
         const w0 = k * 8; for (const o of [0, 4]) for (let s = 0; s < 3; s++) wIdx.push(w0 + o + s, w0 + o + s + 1, w0 + o + s + 8, w0 + o + s + 1, w0 + o + s + 9, w0 + o + s + 8);
       }
     }
-    for (const [arr, ix, mat] of [[deck, dIdx, concrete], [wall, wIdx, wallMat]]) {
+    for (const [arr, ix, mat] of b.tunnel ? [[deck, dIdx, concrete]] : [[deck, dIdx, concrete], [wall, wIdx, wallMat]]) {
       const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(arr, 3)); geo.setIndex(ix); geo.computeVertexNormals();
       const m = new THREE.Mesh(geo, mat); m.castShadow = true; m.receiveShadow = true; group.add(m);
     }
@@ -433,6 +447,7 @@ const TOWN_STYLE = {
   mountain: { walls: [0x8a6a4a, 0xa88a62, 0xcbbca4, 0x76583c, 0xb9a88a], roofs: [0x3b3f45, 0x5a2e24, 0x34402f], pitch: 0.75, plinth: 0x77736b },
   desert: { walls: [0xc9a27a, 0xd8b48c, 0xb88a62, 0xe2cba6, 0xc79070], roofs: [0x9a7556, 0xb08a64, 0x7d5f48], pitch: 0, plinth: 0x9a7a5c },
   coast: { walls: [0xefebe2, 0xd9e4ea, 0xf0d9c4, 0xcfe0d2, 0xece2b8], roofs: [0x9b3a2a, 0x2f4f6f, 0x5a5f66], pitch: 0.5, plinth: 0x8c8a84 },
+  plains: { walls: [0xa8553a, 0xe8e2d4, 0xc9a77c, 0x8f4a34, 0xd8cfb8], roofs: [0x6b6f74, 0x8a4a32, 0x4b5560], pitch: 0.35, plinth: 0x8e8577 },
 };
 function gable(w, d, rh, over = 0.35) {   // a roof: ridge along x, eaves overhanging by `over`
   const x = w / 2 + over, z = d / 2 + over, p = [];
@@ -714,4 +729,65 @@ export function buildTraps(world, traps, scene) {
     for (let k = -4; k <= 4; k++) { const lx = t.x + t.fz * k * 0.9, lz = t.z - t.fx * k * 0.9; b.origin(lx, world.sample(lx, lz) + 0.035, lz, yaw); b.box(0.85, 0.02, 0.32, white, 0, 0, 0); }
   }
   b.into(scene, true, false);
+}
+
+// The speedway (build 38): the oval's outside wall and catch fence, the pit wall, railings along the tunnel cuts,
+// grandstands, the prairie that runs on past the map beside the interstate, the overhead sign at the on-ramp and a
+// mile sign every mile.
+export function buildSpeedway(world, scene) {
+  const W = world.speedway; if (!W) return null;
+  const group = new THREE.Group(), concrete = lam(0xd2cfc6), b = parts();
+  // wall: a continuous strip (inner face, top, outer face) round the oval, with a see-through fence above it
+  const strip = (pts, closed, h, t, mat) => {
+    const pos = [], idx = [], n = pts.length, cnt = closed ? n + 1 : n;
+    for (let k = 0; k < cnt; k++) {
+      const p = pts[k % n], cx = Math.cos(p.yaw), sz = Math.sin(p.yaw), lx = cx, lz = -sz;   // left of travel: (tz, -tx) with t = (sin yaw, cos yaw)
+      for (const [d, y] of [[t, -0.6], [t, h], [-t, h], [-t, -0.6]]) pos.push(p.x + lx * d, p.y + y, p.z + lz * d);
+      if (k < cnt - 1) { const a = k * 4; for (let s = 0; s < 3; s++) idx.push(a + s, a + s + 1, a + s + 4, a + s + 1, a + s + 5, a + s + 4); }
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const m = new THREE.Mesh(g, mat); m.castShadow = true; m.receiveShadow = true; group.add(m); return m;
+  };
+  const wallMat = new THREE.MeshLambertMaterial({ color: 0xe6e3da, side: THREE.DoubleSide });
+  strip(W.walls, true, 1.25, 0.3, wallMat);
+  const fence = strip(W.walls.map((p) => ({ ...p, y: p.y + 1.25 })), true, 4.2, 0.02, new THREE.MeshLambertMaterial({ color: 0x9aa0a6, transparent: true, opacity: 0.28, side: THREE.DoubleSide, depthWrite: false }));
+  fence.castShadow = false;
+  W.walls.forEach((p, k) => { if (k % 5) return; b.origin(p.x, p.y, p.z, p.yaw); b.box(0.12, 5.5, 0.12, lam(0x80868c), 0, 2.75, 0); });
+  strip(W.pitWall, false, 1.05, 0.3, wallMat);
+  for (const p of W.lips) { b.origin(p.x, p.y, p.z, p.yaw); b.box(0.12, 0.9, 2.2, lam(0xbfc3c7), 0, 0.45, 0); }
+  // grandstands: stepped tiers of seats, a roof on posts
+  const seat = [lam(0x2f5fae), lam(0xb3261e), lam(0xd9d6cf)], steel = lam(0x7d848c);
+  for (const o of W.grand) {
+    b.origin(o.x, o.y, o.z, o.yaw);
+    for (let k = 0; k < 7; k++) b.box(o.w, 1.6 + k * 1.9, 3.1, k % 2 ? seat[(k >> 1) % 3] : concrete, 0, (1.6 + k * 1.9) / 2, o.d / 2 - 1.55 - k * 3.05);
+    for (const x of [-o.w / 2 + 1, 0, o.w / 2 - 1]) b.box(0.4, o.h + 2, 0.4, steel, x, (o.h + 2) / 2, -o.d / 2 + 1);
+    b.box(o.w + 2, 0.4, o.d * 0.8, steel, 0, o.h + 2.2, -o.d * 0.1);
+  }
+  // on-ramp sign over the interstate's start, and the mile signs
+  const isl = world.roads.find((r) => r.interstate), F = world.frame(isl, 30), green = lam(0x1f6b3d), post = lam(0x8a9096);
+  b.origin(F.x, F.h, F.z, F.yaw);
+  for (const x of [-isl.hw - 1.5, isl.hw + 1.5]) b.box(0.4, 7.4, 0.4, post, x, 3.7, 0);
+  b.box(2 * isl.hw + 3.4, 0.4, 0.4, post, 0, 7.2, 0);
+  const ramp = signTexture(1024, 256, (g, w, h) => { g.fillStyle = '#1f6b3d'; g.fillRect(0, 0, w, h); g.strokeStyle = '#f3efe4'; g.lineWidth = 8; g.strokeRect(10, 10, w - 20, h - 20);
+    g.fillStyle = '#f3efe4'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `700 70px ${FONT}`; g.fillText(world.regionDef.interstate.toUpperCase() + '  EAST', w / 2, 82); g.font = `600 64px ${FONT}`; g.fillText(world.regionDef.farTown + '  ' + (W.miles.length / 2 + 1) + ' mi', w / 2, 178); });
+  b.plane(12, 3, new THREE.MeshBasicMaterial({ map: ramp }), 0, 9, -0.25, 0, Math.PI); b.box(12.3, 3.3, 0.15, green, 0, 9, 0);
+  const signs = new Map();
+  for (const m of W.miles) {
+    const key = m.to + m.left; let mat = signs.get(key);
+    if (!mat) { const tx = signTexture(256, 160, (g, w, h) => { g.fillStyle = '#1f6b3d'; g.fillRect(0, 0, w, h); g.strokeStyle = '#f3efe4'; g.lineWidth = 6; g.strokeRect(7, 7, w - 14, h - 14);
+      g.fillStyle = '#f3efe4'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = `600 34px ${FONT}`; g.fillText(m.to.toUpperCase(), w / 2, 52); g.font = `700 64px ${FONT}`; g.fillText(m.left + (m.left === 1 ? ' MILE' : ' MILES'), w / 2, 112); });
+      signs.set(key, mat = new THREE.MeshBasicMaterial({ map: tx })); }
+    b.origin(m.x, W.H0, m.z, m.yaw);
+    for (const x of [-1.2, 1.2]) b.box(0.12, 2.6, 0.12, post, x, 1.3, -0.05);
+    b.box(3.3, 2.1, 0.08, green, 0, 2.6, -0.06); b.plane(3.2, 2.0, mat, 0, 2.6, 0.01);
+  }
+  b.into(group, true, true);
+  // the prairie past the map's east edge, and a gravel verge beside the interstate out there
+  const C = world.corridor, len = C.x1 + 1500 - world.half, grain = new THREE.MeshLambertMaterial({ color: 0x8a8448 });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(len, 5000, 1, 1).rotateX(-Math.PI / 2), grain);
+  ground.position.set(world.half + len / 2, W.H0 - 0.02, W.zI); ground.receiveShadow = true; group.add(ground);
+  const verge = new THREE.Mesh(new THREE.PlaneGeometry(len - 1500, 2 * isl.hw + 12, 1, 1).rotateX(-Math.PI / 2), lam(0x8a7d68));
+  verge.position.set(world.half + (len - 1500) / 2, W.H0 + 0.01, W.zI); verge.receiveShadow = true; group.add(verge);
+  scene.add(group);
+  return group;
 }

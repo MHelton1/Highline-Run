@@ -50,14 +50,15 @@ export class Vehicle {
   }
 
   // Put the car down at (x, z) facing `yaw`, lying on the slope so no end starts buried.
-  place(x, z, yaw, lift = this.restH + 0.1) {
-    const w = this.world, q = this.q, h = w.sample(x, z, q);
+  // y (optional): roughly the height wanted, so a car put back in the speedway tunnel stays in it, not on the track above
+  place(x, z, yaw, lift = this.restH + 0.1, y) {
+    const w = this.world, q = this.q, h = w.sample(x, z, q, y);
     const n = tmp.set(q.nx, q.ny, q.nz), f = tmp2.set(Math.sin(yaw), 0, Math.cos(yaw));
     f.addScaledVector(n, -f.dot(n)).normalize();
     this.quat.setFromRotationMatrix(m4.makeBasis(cr.crossVectors(n, f), n, f));
     this.pos.set(x, h, z).addScaledVector(n, lift);
     let need = 0;
-    for (const c of this.corners) { at2.copy(c).applyQuaternion(this.quat).add(this.pos); need = Math.max(need, w.sample(at2.x, at2.z) + 0.12 - at2.y); }
+    for (const c of this.corners) { at2.copy(c).applyQuaternion(this.quat).add(this.pos); need = Math.max(need, w.sample(at2.x, at2.z, undefined, y === undefined ? undefined : at2.y) + 0.12 - at2.y); }
     this.pos.y += need;
     this.vel.set(0, 0, 0); this.angVel.set(0, 0, 0); this.gear = 1; this.steer = 0; this.steerIn = 0; this.hold = 0; this.stopT = 0;
     for (const w of this.wheels) { w.comp = w.prevComp = 0; }
@@ -234,9 +235,11 @@ export class Vehicle {
     }
     if (input.boost && grounded >= 2 && this.gear > 0) this.F.addScaledVector(fwd, m * input.boost);   // nitro
     if (grounded) this.F.addScaledVector(up, -0.6 * s.downforce * vF * vF);
-    const edge = (world.half ?? HALF) - 30;
-    if (Math.abs(this.pos.x) > edge) this.F.x -= m * (Math.sign(this.pos.x) * (Math.abs(this.pos.x) - edge) * 6.9 + this.vel.x * 1.9);
-    if (Math.abs(this.pos.z) > edge) this.F.z -= m * (Math.sign(this.pos.z) * (Math.abs(this.pos.z) - edge) * 6.9 + this.vel.z * 1.9);
+    const edge = (world.half ?? HALF) - 30, cor = world.corridor, P = this.pos;
+    let x0 = -edge, x1 = edge, z0 = -edge, z1 = edge;
+    if (cor && P.x > cor.x0 && P.z > cor.z0 && P.z < cor.z1) { x1 = cor.x1 - 30; z0 = cor.z0 + 30; z1 = cor.z1 - 30; }   // the strip of land past the map (speedway)
+    if (P.x < x0 || P.x > x1) { const e = P.x < x0 ? P.x - x0 : P.x - x1; this.F.x -= m * (e * 6.9 + this.vel.x * 1.9); }
+    if (P.z < z0 || P.z > z1) { const e = P.z < z0 ? P.z - z0 : P.z - z1; this.F.z -= m * (e * 6.9 + this.vel.z * 1.9); }
 
     // ---- integrate ----
     this.vel.addScaledVector(this.F, dt / m);

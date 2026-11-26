@@ -44,4 +44,21 @@ REGIONS.coast = {
   snow: false, trees: 'fir', treeCount: [4000, 5500],
   surfName: ['Asphalt', 'Dirt', 'Grass', 'Rock', 'Snow'],
 };
-export const REGION_IDS = Object.keys(REGIONS);
+// The bonus map (build 38): opens, with the hypercar, once every goal of the three regions above is done. It is laid
+// out by hand (see `layout` in terrain.js): a banked 1.5 mile oval with a pit lane and a tunnel out to a town, and a
+// 20 mile interstate east off the map to a second town. Inspired by big American speedways, copying none of them.
+REGIONS.speedway = {
+  name: 'Ironhorse Speedway', short: 'the speedway', seed: 59, ground: 'plains', layout: 'speedway', bonus: true,
+  blurb: 'flat prairie round a banked 1.5 mile oval. Out through the pit tunnel to Trackside, then 20 miles of interstate east to Sundown Flats.',
+  ring: 'Ironhorse Oval', trail: 'Ranch Road', pit: 'Pit Lane', access: 'Speedway Boulevard', interstate: 'Interstate 300', farTown: 'Sundown Flats',
+  garages: ['Trackside Garage', 'Infield Garage'], towns: ['Trackside'],
+  sites: ['Feed Store', 'Grain Elevator', 'Truck Stop', 'Cattle Pens', 'Water Tower'],
+  trailSites: ['Windmill', 'Line Shack'],
+  camps: ['Dry Tank', 'Mesquite Draw', 'Caliche Pit', 'Old Corral'],
+  trialVia: 'Cattle Pens', trialGates: [[-300, 650], [-800, 300], [-1300, 600]],
+  snow: false, trees: 'fir', treeCount: [700, 1000],
+  surfName: ['Asphalt', 'Dirt', 'Grass', 'Rock', 'Snow'],
+};
+// the regions of the main game (goals, cups and "drive in every region" count these); BONUS_IDS open later
+export const REGION_IDS = Object.keys(REGIONS).filter((r) => !REGIONS[r].bonus);
+export const BONUS_IDS = Object.keys(REGIONS).filter((r) => REGIONS[r].bonus);

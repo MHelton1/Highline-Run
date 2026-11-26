@@ -127,6 +127,17 @@ export const CARS = {
       driveFront: 0, grip: 1.15, rearGrip: 1.08, surfGrip: [1, 0.9, 0.82, 0.86, 0.8], rrLoose: 1.4, stability: 3.3, tc: 1, forceLift: 0.17, tapCut: 0.62, airLevel: 7,
       cdA: 0.6, downforce: 0.5, maxSteer: 0.56, steerRate: 8.5 }),
   },
+  // the speedway's find (build 38): an old endurance prototype in a garage in Sundown Flats, 20 miles out
+  endure: {
+    price: 0, value: 60000, paint: 5, drive: 'RWD', find: 'speedway',
+    blurb: 'A long-tail endurance prototype from the early nineties, found in a garage in Sundown Flats. Featherlight, huge downforce and an engine that screams to 9,500 rpm.',
+    sound: { pitch: 1.6, sub: 0.2, bright: 1.7 },
+    base: design({ name: 'Vortex 91 Prototype', style: 'coupe', look: 'proto', mass: 850, size: [1.99, 4.78, 1.0], track: 1.62, wheelbase: 2.66, front: 0.47, radius: 0.33, tyreW: 0.33,
+      freq: 2.6, zb: 0.62, zr: 0.96, bump: 0.06, tuck: 0.025, arb: [0.6, 0.35], comH: 0.36, clearance: 0.12,
+      torque: 540, peakRpm: 8200, redline: 9500, idle: 1300, band: 6500, gears: [2.7, 1.95, 1.5, 1.2, 0.98], reverse: 2.8, final: 3.55,
+      driveFront: 0, grip: 1.24, rearGrip: 1.1, surfGrip: [1, 0.85, 0.78, 0.82, 0.75], rrLoose: 1.6, stability: 3.5, tc: 1, forceLift: 0.14, tapCut: 0.64, airLevel: 7,
+      cdA: 0.74, downforce: 2.8, maxSteer: 0.5, steerRate: 8.5 }),
+  },
   // ---- the champion's car: won by taking the cup in every region (see cup.js). Not for sale. ----
   champ: {
     price: 0, value: 40000, paint: 1, drive: 'AWD', prize: true,
@@ -140,6 +151,18 @@ export const CARS = {
   },
 };
 // showroom order: cheapest first (the hidden finds and the champion's car are not for sale)
+// the hypercar (build 38): earned by finishing every goal in all three regions, with the speedway. Real 300 mph cars
+// were the reference for its numbers (about 1,600 hp, all-wheel drive, low drag, just over 300 mph); the car is our own.
+CARS.hyper = {
+  price: 0, value: 250000, paint: 4, drive: 'AWD', prize: true, unlock: 'all',
+  blurb: 'The reward for clearing every map: a long-tail hypercar with about 1,600 horsepower, all-wheel drive and a top speed just over 300 mph. Take it to the interstate.',
+  sound: { pitch: 1.05, sub: 0.7, bright: 1.5 },
+  base: design({ name: 'Zenith 300', style: 'coupe', look: 'hyper', mass: 1600, size: [2.04, 4.72, 1.13], track: 1.74, wheelbase: 2.74, front: 0.48, radius: 0.36, tyreW: 0.34,
+    freq: 2.3, zb: 0.62, zr: 0.96, bump: 0.07, tuck: 0.03, arb: [0.6, 0.32], comH: 0.42, clearance: 0.13,
+    torque: 1650, peakRpm: 6600, redline: 8000, idle: 1000, band: 7400, gears: [2.95, 2.05, 1.58, 1.27, 1.05, 0.88, 0.75], reverse: 3.0, final: 2.95,
+    driveFront: 0.38, grip: 1.26, rearGrip: 1.1, surfGrip: [1, 0.88, 0.8, 0.84, 0.78], rrLoose: 1.5, stability: 3.6, tc: 1, forceLift: 0.14, tapCut: 0.66, airLevel: 7,
+    cdA: 0.46, downforce: 1.1, maxSteer: 0.5, steerRate: 8 }),
+};
 export const CAR_IDS = Object.keys(CARS).filter((id) => !CARS[id].find && !CARS[id].prize).sort((a, b) => CARS[a].price - CARS[b].price);
 export const PRIZE_IDS = Object.keys(CARS).filter((id) => CARS[id].prize);
 export const FIND_IDS = Object.keys(CARS).filter((id) => CARS[id].find);

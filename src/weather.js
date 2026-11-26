@@ -19,6 +19,7 @@ export const REGION_WEATHER = {
   mountain: { storm: 'snow', mix: [['clear', 4], ['cloudy', 3], ['rain', 2], ['snow', 2], ['fog', 1]] },
   desert: { storm: 'dust', mix: [['clear', 6], ['cloudy', 2], ['dust', 2], ['rain', 0.6]] },
   coast: { storm: 'rain', mix: [['clear', 4], ['cloudy', 3], ['fog', 2], ['rain', 2.5]] },
+  speedway: { storm: 'rain', mix: [['clear', 6], ['cloudy', 3], ['rain', 1.5], ['dust', 0.6]] },
 };
 
 export const WEATHER_MODES = ['auto', 'clear', 'storm'];

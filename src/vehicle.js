@@ -14,7 +14,11 @@ export const RALLY_CAR = {
 const m4 = new Matrix4();
 export const G = 13.2;   // heavier than real gravity so jumps land quickly
 const AIR_G = 0.45;       // extra pull while all four wheels are off the ground
-export const STOP_HOLD = 0.6;   // seconds a car stopped on the brake stays put before reverse is selected
+// Build 37 (Michael: "tighten up the handling and braking, cars feel like they take too long to stop"): the brakes get
+// help from the body beyond what the tyres give (about 1.6 g in all on tarmac), lifting off slows the car noticeably,
+// and steering builds up faster from keys and touch.
+export const BRAKE_ASSIST = 3.6, LIFT_DRAG = 1.2, STEER_QUICK = 1.3;
+export const STOP_HOLD = 0.75;   // seconds a car stopped on the brake stays put before reverse is selected
 const tmp = new Vector3(), tmp2 = new Vector3(), rel = new Vector3(), fvec = new Vector3(), vc = new Vector3(), cr = new Vector3(), at2 = new Vector3();
 const tyreCurve = (x) => { const a = Math.abs(x); return Math.sign(x) * Math.sin(1.3 * Math.atan(1.5 * a)); };
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
@@ -85,11 +89,11 @@ export class Vehicle {
       // (Quick but gentle is far easier to control with on/off input than slow but strong.)
       const dir = Math.sign(cmd), tap = 1 - s.tapCut * clamp((av - 8) / 20, 0, 1);
       if (dir === 0) this.hold = Math.max(0, this.hold - 3 * dt);                       // brief release: keep most of the build-up
-      else if (dir === this.keyDir) this.hold = Math.min(1, this.hold + dt / (0.25 + 0.5 * clamp(av / 30, 0, 1)));
+      else if (dir === this.keyDir) this.hold = Math.min(1, this.hold + dt / (0.18 + 0.36 * clamp(av / 30, 0, 1)));
       else { this.hold = 0; this.keyDir = dir; }                                        // other direction: start again
       cmd = dir * (tap + (1 - tap) * this.hold);
     }
-    this.steerIn += clamp(cmd - this.steerIn, -s.steerRate * dt, s.steerRate * dt);
+    this.steerIn += clamp(cmd - this.steerIn, -s.steerRate * STEER_QUICK * dt, s.steerRate * STEER_QUICK * dt);
     this.steer = this.steerIn * this.lock;
 
     // ---- gearbox + engine ----
@@ -222,6 +226,12 @@ export class Vehicle {
 
     // ---- aero, world edge ----
     this.F.addScaledVector(this.vel, -0.6 * s.cdA * speed);
+    // brake assist and lift-off drag (build 37): straight against the direction of travel, only with wheels on the ground
+    if (grounded >= 2 && Math.abs(vF) > 0.3) {
+      const dir = Math.sign(vF), fade = Math.min(1, Math.abs(vF) / 2) * grounded / 4;
+      if (brk > 0.05) this.F.addScaledVector(fwd, -dir * m * BRAKE_ASSIST * brk * fade);
+      else if (thr < 0.05 && this.gear > 0 && !input.handbrake) this.F.addScaledVector(fwd, -dir * m * LIFT_DRAG * fade);
+    }
     if (input.boost && grounded >= 2 && this.gear > 0) this.F.addScaledVector(fwd, m * input.boost);   // nitro
     if (grounded) this.F.addScaledVector(up, -0.6 * s.downforce * vF * vF);
     const edge = (world.half ?? HALF) - 30;

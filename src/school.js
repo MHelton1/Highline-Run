@@ -9,9 +9,9 @@ export const SCHOOL_PAY = [2000, 1000, 500];               // what a gold, silve
 const PREFIX = { mountain: 'tm-', desert: 'td-', coast: 'tc-' };
 // medal times (gold, silver, bronze, seconds) per region and test, set from the robot runs in tests/school.mjs
 export const SCHOOL_MEDALS = {
-  mountain: { start: [9.8, 10.9, 12.4], stop: [8.5, 9.4, 10.7], slalom: [15.9, 17.6, 20.1], bends: [15.5, 17.2, 19.6], gravel: [27.7, 30.7, 35] },
-  desert: { start: [11.1, 12.2, 14], stop: [9, 10, 11.4], slalom: [16, 17.7, 20.2], bends: [17.5, 19.3, 22.1], gravel: [28.4, 31.4, 35.8] },
-  coast: { start: [10.8, 12, 13.7], stop: [9, 9.9, 11.3], slalom: [16.1, 17.8, 20.3], bends: [16, 17.7, 20.2], gravel: [27, 29.8, 34] },
+  mountain: { start: [9.8, 10.9, 12.4], stop: [8.5, 9.4, 10.7], slalom: [15.4, 17, 19.4], bends: [15.6, 17.2, 19.7], gravel: [27.8, 30.8, 35.1] },
+  desert: { start: [11.1, 12.2, 14], stop: [9, 10, 11.4], slalom: [15.7, 17.4, 19.9], bends: [17.5, 19.4, 22.1], gravel: [28.5, 31.5, 35.9] },
+  coast: { start: [10.8, 12, 13.7], stop: [9, 10, 11.4], slalom: [15.8, 17.5, 19.9], bends: [16.1, 17.8, 20.3], gravel: [27.1, 30, 34.2] },
 };
 export const SCHOOL_TESTS = [
   { key: 'start', name: 'Standing Start', blurb: 'From a standstill to the marker 300 m up the road, as quickly as the car will go. Smooth on the throttle, no wheelspin.' },

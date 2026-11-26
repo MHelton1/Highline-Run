@@ -113,6 +113,7 @@ Pictures for judging the look (not pass or fail):
     REGION=coast node tests/traffic.mjs   # traffic: fills in, keeps its lane and speed, slows in towns, queues behind a parked car
     REGION=coast node tests/trafficui.cjs [outdir]  # traffic in the page: drawn, off in races, the menu switch, pictures
     REGION=coast node tests/school.mjs [calibrate]  # driving tests: robot runs in the school car against the medal times
+    node tests/brakes.mjs [show]          # 60-0 and 100-0 mph distances, lift-off roll, turn-in time for every car
     node tests/solid.mjs                  # buildings, bridge piers and railings stop the car; it can drive under a bridge
     node tests/cruiseui.cjs               # auto throttle: holds 80 mph, more throttle overrides, brake cancels
     REGION=coast node tests/schoolui.cjs [outdir]  # driving tests in the page: list, school car, pay once, own car back
@@ -221,6 +222,12 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   Auto throttle (`cruiseInput` in main.js, menu switch saved as `cruise`): holds 80 mph in free roam and races, the
   player's throttle wins when it asks for more, the brake or handbrake hands control back. Tests: `tests/solid.mjs`,
   `tests/cruiseui.cjs`.
+- Brakes and handling (build 37, Michael: "tighten up the handling and braking, cars feel like they take too long to
+  stop"): `BRAKE_ASSIST` (3.6 m/s² x brake) and `LIFT_DRAG` (1.2 m/s² with no pedal in a forward gear) push straight
+  against the direction of travel while two or more wheels are down, so 60-0 mph is about 22 m (was 29) and lifting
+  off at 60 rolls about 150 m (was 300 to 580). Key and touch steering builds to full lock in 0.18 to 0.54 s (was 0.25
+  to 0.75) and every car's `steerRate` is x1.3 (`STEER_QUICK`). `STOP_HOLD` went from 0.6 to 0.75 s because the
+  harder stop spends less time under 2.5 m/s. School medals recalibrated. Test: `node tests/brakes.mjs [show]`.
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

@@ -40,7 +40,8 @@ require('fs').mkdirSync(OUT, { recursive: true });
   log('left', await p.evaluate(() => { const g = window.__game; g.advance(1); return { mode: g.mode, car: g.car.spec.name, saveCar: g.store.data.car, speed: +g.car.speed.toFixed(2), frozen: g.game.frozen, local: JSON.parse(localStorage.getItem('highline.save')).car }; }));
   await snap('6left');
   // drive to the ring race start: stopping in the light opens the offer
-  log('offer', await p.evaluate(() => { const g = window.__game, z = g.zones.find(q => q.kind === 'race' && q.def.base === 'ring'); g.car.place(z.x + 20, z.z, 0); g.advance(0.5); g.car.place(z.x + 1, z.z + 1, z.def.path.at(z.def.startIdx).yaw); g.advance(1.5); return { mode: g.mode, kind: g.ui.kind, title: document.getElementById('dlg-title').textContent, text: document.getElementById('dialog').textContent.slice(0, 400) }; }));
+  // build 39: the Grand Prix is class A; the coupe with a part fitted and tuned is over it, so it goes back to stock first
+  log('offer', await p.evaluate(() => { const g = window.__game, own = g.store.data.cars[g.store.data.car]; own.up = [0, 0, 0, 0]; own.tune = { gear: 0, spring: 0, ride: 0, stab: 1, tc: own.tune.tc }; g.showCar(g.store.data.car, true); const z = g.zones.find(q => q.kind === 'race' && q.def.base === 'ring'); g.car.place(z.x + 20, z.z, 0); g.advance(0.5); g.car.place(z.x + 1, z.z + 1, z.def.path.at(z.def.startIdx).yaw); g.advance(1.5); return { mode: g.mode, kind: g.ui.kind, title: document.getElementById('dlg-title').textContent, text: document.getElementById('dialog').textContent.slice(0, 400) }; }));
   await snap('7offer', 1500);
   // events sharing the light, and difficulty: pick the two-lap race on Hard, check the card, then go back to the Grand Prix on Moderate
   await tap('#dlg-ev-' + EV.double); await tap('#dlg-lv-2');

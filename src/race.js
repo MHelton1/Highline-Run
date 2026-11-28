@@ -1,7 +1,7 @@
 // Races: circuits and sprints against rival cars, and an off-road time trial, each at three levels of difficulty.
 // No rendering (runs in node for tests).
 import { Vehicle, collideCars } from './vehicle.js';
-import { buildSpec } from './cars.js';
+import { buildSpec, carRating, classOf, CLASSES } from './cars.js';
 import { makePath, Driver, Tracker } from './ai.js';
 import { REGIONS } from './regions.js';
 
@@ -40,12 +40,12 @@ const REGION_EVENTS = {
   },
   // the speedway (build 38): the ring events run on the oval, several laps at a time, against faster rivals
   speedway: {
-    spots: { ring: 'Oval races', west: 'Ranch Road Run', east: 'Ranch Road Return', trial: 'Prairie Scramble', inter: 'Interstate Run' },
-    ring: { id: 'oval', name: 'Ironhorse Grand Prix', short: 'Grand Prix', laps: 4, tag: 'Oval · tarmac · 4 laps', blurb: 'Four laps of the banked oval against three rivals. Flat out down the straights; lift a little for the 24 degree turns if the car will not hold them.',
+    spots: { ring: 'Oval races', west: 'Ranch Road Run', east: 'Ranch Road Return', trial: 'Prairie Scramble', inter: 'Interstate Run', drag: 'Truck Stop Drags' },
+    ring: { id: 'oval', oval: true, name: 'Ironhorse Grand Prix', short: 'Grand Prix', laps: 4, tag: 'Oval · tarmac · 4 laps', blurb: 'Four laps of the banked oval against three rivals. Flat out down the straights; lift a little for the 24 degree turns if the car will not hold them.',
       rivals: [{ num: 23, car: 'coupe', skill: 0.66, vcap: 52, paint: 5 }, { num: 8, car: 'coupe', skill: 0.6, vcap: 50, paint: 1 }, { num: 41, car: 'hatch', skill: 0.66, vcap: 49, paint: 2 }], prize: [2500, 1300, 650, 150] },
-    clock: { id: 'ovalb', name: 'Ironhorse Reverse', short: 'Reverse', laps: 4, tag: 'Oval · tarmac · 4 laps', blurb: 'The oval the wrong way round: right turns all the way, still on the banking. Four laps.',
+    clock: { id: 'ovalb', oval: true, name: 'Ironhorse Reverse', short: 'Reverse', laps: 4, tag: 'Oval · tarmac · 4 laps', blurb: 'The oval the wrong way round: right turns all the way, still on the banking. Four laps.',
       rivals: [{ num: 77, car: 'coupe', skill: 0.64, vcap: 51, paint: 0 }, { num: 12, car: 'coupe', skill: 0.6, vcap: 50, paint: 6 }, { num: 9, car: 'hatch', skill: 0.66, vcap: 48, paint: 3 }], prize: [2500, 1300, 650, 150] },
-    double: { id: 'ovalx', name: 'Ironhorse 200', short: 'Ironhorse 200', laps: 8, tag: 'Oval · tarmac · 8 laps', blurb: 'Eight laps, about twelve miles, against tuned cars. Bring something fast.',
+    double: { id: 'ovalx', oval: true, name: 'Ironhorse 200', short: 'Ironhorse 200', laps: 8, tag: 'Oval · tarmac · 8 laps', blurb: 'Eight laps, about twelve miles, against tuned cars. Bring something fast.',
       rivals: [{ num: 3, car: 'coupe', up: [2, 2, 1, 1], skill: 0.68, vcap: 60, paint: 4 }, { num: 28, car: 'apex', skill: 0.6, vcap: 58, paint: 1 }, { num: 55, car: 'coupe', up: [1, 1, 1, 0], skill: 0.64, vcap: 56, paint: 2 }], prize: [5000, 2600, 1300, 300] },
     dash: { id: 'ranch', name: 'Ranch Road Run', short: 'Ranch Run', blurb: 'Point to point on the dirt ranch road from Trackside round the west side of the prairie. Three rivals.' },
     descent: { id: 'ranchb', name: 'Ranch Road Return', short: 'Ranch Return', blurb: 'The ranch road back to Trackside, every corner the other way.' },
@@ -77,8 +77,42 @@ export function buildRaces(world) {
     const o = over[d.id] || {}, rivals = o.rivals ? d.rivals.map((r, k) => ({ ...r, ...o.rivals[k] })) : d.rivals;
     return { ...d, ...o, rivals, short: o.short || d.short, base: d.id, dist: o.laps ? d.path.len * o.laps : d.dist };
   });
-  const extra = [outerRace(world), interRace(world)].filter(Boolean);
-  return [...all, ...extra];
+  const extra = [outerRace(world), interRace(world), ...dragRaces(world)].filter(Boolean), out = [...all, ...extra];
+  for (const d of out) d.cls = classLimit(d);
+  return out;
+}
+
+// road races with rivals are capped at the class of the quickest rival car (build 39); dirt races and time trials take any car
+export function classLimit(d) {
+  if (!d.rivals || !d.rivals.length || !/tarmac/.test(d.tag || '')) return null;
+  return Math.max(...d.rivals.map((r) => classOf(carRating(r.car, r.up || [0, 0, 0, 0]))));
+}
+// can this car (rating pr) enter? null limit: any car
+export const fitsClass = (d, pr) => d.cls == null || classOf(pr) <= d.cls;
+export const limitText = (cls) => (cls == null ? 'Any car' : `Class ${CLASSES[cls][0]} or lower (rating up to ${CLASSES[cls][1]})`);
+
+// the speedway's 'easier rivals' switch (build 39, on by default): the oval races' rivals run slower and a little more
+// carefully, so an ordinary car driven well can win. Off, they run at the pace the events were first set at.
+export const OVAL_EASE = { vcap: 0.88, skill: 0.95 };
+export const easeOval = (def) => (def.oval ? { ...def, rivals: def.rivals.map((r) => ({ ...r, vcap: r.vcap * OVAL_EASE.vcap, skill: r.skill * OVAL_EASE.skill })) } : def);
+
+// drag races at the interstate's truck stop (build 39, part of the interstate extras): side by side from a standstill,
+// flat out to a line a quarter or half a mile up the eastbound lanes. The rivals run uncapped; only their cars differ.
+const DRAG_LANES = [-9, -2.2, 2.2, -5.6];      // three rivals, then the player (metres left of the centre line)
+function dragRaces(world) {
+  const L = world.places.lines.drag; if (!L) return [];
+  const road = world.roads[L.road], path = makePath(road), i0 = path.of(L.idx), R = (num, car, paint, up) => ({ num, car, up, skill: 0.9, vcap: 99, paint });
+  const make = (id, name, short, m, blurb, rivals, prize) => {
+    const i1 = i0 + Math.round(m / path.ds), f = path.at(i1);
+    return { id, base: id, spot: 'drag', name, short, kind: 'sprint', drag: DRAG_LANES, extra: true, tag: `Drag race · tarmac · ${short.toLowerCase()}`, blurb,
+      x: L.x, z: L.z, y: L.y, path, startIdx: i0, gates: [{ x: f.x, z: f.z, y: f.y, idx: f.i, r: 16, prog: m }], dist: m, rivals, prize };
+  };
+  return [
+    make('drag', 'Quarter Mile', 'Quarter mile', 402, 'Four abreast from a standstill to the line a quarter of a mile up the road. Launch clean, change up on time, and do not touch the brakes.',
+      [R(16, 'sprint', 6), R(42, 'hatch', 2), R(7, 'trophy', 4)], [1200, 600, 300, 100]),
+    make('dragx', 'Half Mile Shootout', 'Half mile', 805, 'Half a mile flat out against three serious cars. Top speed counts as much as the launch here.',
+      [R(99, 'apex', 1), R(31, 'coupe', 5, [3, 3, 3, 3]), R(64, 'coupe', 0, [2, 2, 1, 1])], [3000, 1500, 750, 200]),
+  ];
 }
 
 // the speedway's interstate: a 20 mile time trial from the on-ramp to Sundown Flats, a checkpoint every two miles.
@@ -154,7 +188,8 @@ export class Race {
     const p = def.path;
     if (p) {
       // grid: rivals in front, the player at the back
-      const slot = (k) => { const back = 7 + 8 * k, f = p.at(def.startIdx - Math.round(back / p.ds)), lat = (k % 2 ? -1 : 1) * Math.min(2.3, p.hw - 1.7); return { back, f, lat, x: f.x + f.tz * lat, z: f.z - f.tx * lat }; };
+      const slot = (k) => { if (def.drag) { const f = p.at(def.startIdx - Math.round(6 / p.ds)), lat = def.drag[k]; return { back: 6, f, lat, x: f.x + f.tz * lat, z: f.z - f.tx * lat }; }
+        const back = 7 + 8 * k, f = p.at(def.startIdx - Math.round(back / p.ds)), lat = (k % 2 ? -1 : 1) * Math.min(2.3, p.hw - 1.7); return { back, f, lat, x: f.x + f.tz * lat, z: f.z - f.tx * lat }; };
       this.rivals = def.rivals.map((r, k) => {
         const spec = buildSpec(r.car, r.up), car = new Vehicle(world, spec), s = slot(k);
         car.place(s.x, s.z, s.f.yaw);

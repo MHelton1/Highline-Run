@@ -232,6 +232,20 @@ export function measure(spec, maxT = 60) {
   return { t60: t60 || maxT, top: car.speed };
 }
 
+// Performance rating (build 39): one number, 100 to 999, from what the car does on the test strip as built (top
+// speed, 0-60 mph) and its tyre grip. Classes cap road races so the fastest car does not simply win everything.
+export const CLASSES = [['D', 399], ['C', 499], ['B', 599], ['A', 699], ['S', 849], ['X', 999]];
+export const ratingFrom = (spec, m) => Math.max(100, Math.min(999, Math.round(100 + (m.top * 2.23694 - 90) * 1.5 + (8 - m.t60) * 40 + (spec.grip * (1 + spec.rearGrip) / 2 - 0.95) * 800)));
+export const classOf = (pr) => { const i = CLASSES.findIndex(([, mx]) => pr <= mx); return i < 0 ? CLASSES.length - 1 : i; };
+export const classText = (pr) => CLASSES[classOf(pr)][0] + ' ' + pr;
+const prCache = new Map();
+export function carRating(id, up = [0, 0, 0, 0], tune = stockTune(id)) {
+  const key = id + up.join('') + TUNING.map((t) => tune[t.key]).join(',');
+  let v = prCache.get(key);
+  if (v == null) { const spec = buildSpec(id, up, tune); v = ratingFrom(spec, measure(spec, 45)); prCache.set(key, v); }
+  return v;
+}
+
 // 0..1 bars for the showroom. Grip and off-road come straight from the physics numbers.
 export function rate(spec, m = measure(spec)) {
   const sg = spec.surfGrip, c = (v) => Math.max(0.04, Math.min(1, v));

@@ -116,6 +116,8 @@ Pictures for judging the look (not pass or fail):
     node tests/brakes.mjs [show]          # 60-0 and 100-0 mph distances, lift-off roll, turn-in time for every car
     node tests/solid.mjs                  # buildings, bridge piers and railings stop the car; it can drive under a bridge
     node tests/cruiseui.cjs               # auto throttle: holds 80 mph, more throttle overrides, brake cancels
+    [PHONE=1] node tests/classui.cjs [outdir]  # car classes: rating, locked race card, parts off and refit, kid mode
+    node tests/damageui.cjs [outdir]      # crash damage: dents, power, menu switch, kid mode, garage repair
     node tests/speedwayui.cjs [outdir]    # bonus speedway map in the page: races, tunnel under the track, interstate, pictures
     REGION=coast node tests/schoolui.cjs [outdir]  # driving tests in the page: list, school car, pay once, own car back
     node tests/garage8.cjs [outdir]  # garage with every car on an upright and a sideways phone (pictures)
@@ -239,6 +241,28 @@ HUD text, light visibility and the shade under cars only refresh on a drawn fram
   (`farSample`, `world.corridor` keeps the car inside the strip). The classic endurance racer `endure` (Vortex 91
   Prototype) is the hidden barn car in Sundown Flats. Every `world.sample` wrapper must pass the 4th argument (the
   asker's y): finds.js's ramp layer dropped it, so in the page cars under a deck or in the tunnel were lifted onto it.
+- Classes and three switches (build 39, Michael 2026-11-28: "lets do all recomendations but b,c,d as settings"):
+  - Car classes (always on): `carRating(id, up, tune)` in cars.js gives 100 to 999 from the test-strip top speed and
+    0-60 time plus tyre grip; `CLASSES` D, C, B, A, S, X. Road races with rivals get `cls`, the class of their quickest
+    rival car (`classLimit` in race.js); dirt races and time trials take any car; kid mode takes any car. The race card
+    and the cup card lock the start button and say why; `startRace` checks too. Parts can be taken off in the garage
+    and refitted for nothing (`cars[id].has` = stages bought, `up` = stages fitted).
+  - Interstate extras (`extras`, on by default): traffic on Interstate 300 (open-ended routes, three lanes each way,
+    cars leave at the ends), top speed traps at miles 5 and 15, and the Truck Stop Drags (Quarter Mile, class C;
+    Half Mile Shootout, class S; side-by-side grid from `def.drag`). Mile 10 Truck Stop (a third garage, diner, fuel
+    canopy) is always there. Traffic never runs on roads marked `noTraffic` (the oval, the far roundabout).
+  - Easier speedway rivals (`easyOval`, on by default): `easeOval(def)` runs the oval events' rivals at 0.88 x top
+    speed and 0.95 x skill. Test with `EASY=1 REGION=speedway node tests/races.mjs ring`.
+  - Crash damage (`damage`, on by default; never in kid mode, two players or driving tests): `src/damage.js`. Knocks
+    over 7 m/s add damage (saved as `cars[id].dmg`), dent the model's vertices near the hit point (`car.hitX/Y/Z` from
+    vehicle.js), break the headlights past 40%, and cut throttle (up to 18%) with a slight pull. Opening any garage
+    repairs every owned car for a fee. Tests: `tests/classui.cjs`, `tests/damageui.cjs`, `tests/speedwayui.cjs`.
+  - Speedway terrain fixes (Michael: "track should not have traffic, also terrain is buggy"): the pit lane now leaves
+    and rejoins the oval at the foot of the banking (`SP.pitO(k)` eases from the track edge out to 25 m over 45
+    samples), so there is no cliff where it meets the banking. Past the east edge `farSample` keeps the nearest sample
+    per road in each bucket and uses the road whose blend `t` is smallest, so the Sundown Flats roundabout keeps its
+    own flat surface instead of the interstate's edge ramp. Check with a roughness walk along each road (second
+    difference of `world.sample` with the y hint, under 0.35 m).
 - Sound (build 11): `src/audio.js` makes the engine, tyres, wind, siren and effects; `src/music.js` adds each region's
   music (`STYLES`: tempo, four-chord loop, lead sound; the tune comes from `tuneFor(region)`, the same every time; drums
   join while racing or chased with cargo) and background sound (wind and birds, breeze, cicadas and a hawk, waves louder

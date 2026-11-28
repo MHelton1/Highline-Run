@@ -38,7 +38,7 @@ const mode = process.argv[2] || 'port', OUT = process.argv[3] || path.join(__dir
   check('card', !s4.on && !s4.paused && s4.label === 'Your marker' && s4.name === 'Your marker' && s4.hud === 'visible', s4);
   // drive up to it (put the car there) and it clears
   const s5 = await p.evaluate(() => { const g = window.__game, n = g.nav; g.car.place(n.x + 5, n.z + 5, 0, 0.5); g.advance(0.5); return { nav: g.nav, toast: document.getElementById('toast').textContent }; });
-  check('arrive', !s5.nav && /reached your marker/.test(s5.toast), s5);
+  check('arrive', !s5.nav && /reached your marker|Entering/.test(s5.toast), s5);   // a town banner can take the toast
   await p.waitForTimeout(300);
   // menu button route and clear button
   await tap('#menubtn'); await p.waitForTimeout(400); await tap('#dlg-map'); await p.waitForTimeout(600);

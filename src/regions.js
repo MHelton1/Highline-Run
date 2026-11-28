@@ -50,9 +50,9 @@ REGIONS.coast = {
 REGIONS.speedway = {
   name: 'Ironhorse Speedway', short: 'the speedway', seed: 59, ground: 'plains', layout: 'speedway', bonus: true,
   blurb: 'flat prairie round a banked 1.5 mile oval. Out through the pit tunnel to Trackside, then 20 miles of interstate east to Sundown Flats.',
-  ring: 'Ironhorse Oval', trail: 'Ranch Road', pit: 'Pit Lane', access: 'Speedway Boulevard', interstate: 'Interstate 300', farTown: 'Sundown Flats',
+  ring: 'Ironhorse Oval', trail: 'Ranch Road', pit: 'Pit Lane', access: 'Speedway Boulevard', interstate: 'Interstate 300', farTown: 'Sundown Flats', truckStop: 'Mile 10 Truck Stop',
   garages: ['Trackside Garage', 'Infield Garage'], towns: ['Trackside'],
-  sites: ['Feed Store', 'Grain Elevator', 'Truck Stop', 'Cattle Pens', 'Water Tower'],
+  sites: ['Feed Store', 'Grain Elevator', 'Gravel Yard', 'Cattle Pens', 'Water Tower'],
   trailSites: ['Windmill', 'Line Shack'],
   camps: ['Dry Tank', 'Mesquite Draw', 'Caliche Pit', 'Old Corral'],
   trialVia: 'Cattle Pens', trialGates: [[-300, 650], [-800, 300], [-1300, 600]],

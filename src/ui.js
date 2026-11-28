@@ -1,8 +1,8 @@
 // Menus drawn over the 3D view: the garage, race offers and results, and the pause menu.
 import { REGIONS, REGION_IDS, BONUS_IDS } from './regions.js';
 import { NITRO } from './stunts.js';
-import { CARS, CAR_IDS, FIND_IDS, PRIZE_IDS, PAINTS, UPGRADES, TUNING, upgradeCost, stockTune, buildSpec, measure, rate } from './cars.js';
-import { MEDALS, PLACES, LEVELS, KID_LEVEL, rankKey, prizes, medals } from './race.js';
+import { CARS, CAR_IDS, FIND_IDS, PRIZE_IDS, PAINTS, UPGRADES, TUNING, upgradeCost, stockTune, buildSpec, measure, rate, ratingFrom, classOf, classText, CLASSES } from './cars.js';
+import { MEDALS, PLACES, LEVELS, KID_LEVEL, rankKey, prizes, medals, fitsClass, limitText } from './race.js';
 import { regionGoals, garageGoals, isDone, paintLocked, regionComplete, REGION_PAINT } from './goals.js';
 import { CUP_ROUNDS, POINTS, TROPHY, purse, cupTable } from './cup.js';
 import { ACTIONS, P2_ACTIONS, PAD_ACTIONS, STYLES, STYLE_NAME, actionName, keyName, buttonName, menuButtons } from './binds.js';
@@ -32,25 +32,32 @@ export function createUI(g) {
   function numbers(id) {       // measured on a test strip, so the bars always tell the truth about the car as built
     const own = S().cars[id], up = own ? own.up : [0, 0, 0, 0], tune = own ? own.tune : stockTune(id), key = id + up.join('') + TUNING.map((t) => tune[t.key]).join(',');
     let v = cache.get(key);
-    if (!v) { const spec = buildSpec(id, up, tune), m = measure(spec, 45); v = { m, bars: rate(spec, m), mass: spec.mass }; cache.set(key, v); if (cache.size > 80) cache.delete(cache.keys().next().value); }
+    if (!v) { const spec = buildSpec(id, up, tune), m = measure(spec, 45); v = { m, bars: rate(spec, m), mass: spec.mass, pr: ratingFrom(spec, m) }; cache.set(key, v); if (cache.size > 80) cache.delete(cache.keys().next().value); }
     return v;
   }
   function drawStats(id) {
     const n = numbers(id), metric = g.metric(), top = n.m.top * (metric ? 3.6 : 2.23694);
     const row = (name, f, val) => [el('dt', null, name), el('dd', { class: 'bar' }, el('i', { style: `transform:scaleX(${f.toFixed(3)})` })), el('dd', { class: 'val' }, val)];
-    $('g-stats').replaceChildren(...row('Top speed', n.bars.speed, Math.round(top) + (metric ? ' km/h' : ' mph')), ...row('0–60 mph', n.bars.accel, n.m.t60.toFixed(1) + ' s'), ...row('Grip', n.bars.grip, ''), ...row('Off-road', n.bars.offroad, ''));
+    $('g-stats').replaceChildren(...row('Rating', (n.pr - 100) / 899, classText(n.pr)), ...row('Top speed', n.bars.speed, Math.round(top) + (metric ? ' km/h' : ' mph')), ...row('0–60 mph', n.bars.accel, n.m.t60.toFixed(1) + ' s'), ...row('Grip', n.bars.grip, ''), ...row('Off-road', n.bars.offroad, ''));
     $('g-sub').textContent = CARS[id].drive + ' · ' + (metric ? Math.round(n.mass).toLocaleString('en-US') + ' kg' : (Math.round(n.mass * 2.20462 / 10) * 10).toLocaleString('en-US') + ' lb');
   }
   const buyCar = (id) => {
     const s = S(), c = CARS[id];
     if (s.cash < c.price) return g.audio.deny();
-    s.cash -= c.price; s.cars[id] = { up: [0, 0, 0, 0], tune: stockTune(id), paint: c.paint }; s.car = id; g.store.commit(); g.audio.buy(); g.showCar(id, true); draw();
+    s.cash -= c.price; s.cars[id] = { up: [0, 0, 0, 0], has: [0, 0, 0, 0], tune: stockTune(id), paint: c.paint }; s.car = id; g.store.commit(); g.audio.buy(); g.showCar(id, true); draw();
   };
   const driveCar = (id) => { S().car = id; g.store.commit(); g.audio.click(); g.showCar(id, true); draw(); };
+  // parts you have bought stay yours: take a stage off to fit a lower class, and refit it later for nothing (build 39)
   const buyUpgrade = (t) => {
     const s = S(), own = s.cars[s.car], lv = own.up[t]; if (lv >= 3) return;
+    if (!own.has) own.has = own.up.slice();
+    if (lv < own.has[t]) { own.up[t] = lv + 1; g.store.commit(); g.audio.click(); g.showCar(s.car, true); draw(); return; }
     const cost = upgradeCost(s.car, t, lv); if (s.cash < cost) return g.audio.deny();
-    s.cash -= cost; own.up[t] = lv + 1; g.store.commit(); g.audio.buy(); g.showCar(s.car, true); draw();
+    s.cash -= cost; own.up[t] = lv + 1; own.has[t] = lv + 1; g.store.commit(); g.audio.buy(); g.showCar(s.car, true); draw();
+  };
+  const removeUpgrade = (t) => {
+    const s = S(), own = s.cars[s.car]; if (own.up[t] <= 0) return;
+    own.up[t]--; g.store.commit(); g.audio.click(); g.showCar(s.car, true); draw();
   };
   const tuneText = (t, v) => (t.min < 0 ? (Math.abs(v) < 0.005 ? 'Stock' : (v > 0 ? '+' : '−') + Math.round(Math.abs(v) * 100) + '%') : v < 0.005 ? 'Off' : Math.round(v * 100) + '%');
   function tuned(t, input, done) {
@@ -103,10 +110,13 @@ export function createUI(g) {
       }
     } else if (tab === 'up') {
       UPGRADES.forEach((u, t) => {
-        const lv = own.up[t], cost = lv < 3 ? upgradeCost(sel, t, lv) : 0;
+        if (!own.has) own.has = own.up.slice();
+        const lv = own.up[t], refit = lv < own.has[t], cost = lv < 3 && !refit ? upgradeCost(sel, t, lv) : 0;
         out.push(el('div', { class: 'uprow' },
-          el('span', { class: 'up-name' }, u.name, el('span', { class: 'pips', role: 'img', 'aria-label': `Stage ${lv} of 3` }, [0, 1, 2].map((k) => el('i', { class: k < lv ? 'on' : '' })))),
-          el('button', { id: 'g-up-' + u.key, type: 'button', class: 'btn', disabled: lv >= 3 || s.cash < cost, onclick: () => buyUpgrade(t) }, lv >= 3 ? 'Fully fitted' : `Stage ${lv + 1} · ${money(cost)}`),
+          el('span', { class: 'up-name' }, u.name, el('span', { class: 'pips', role: 'img', 'aria-label': `Stage ${lv} of 3` }, [0, 1, 2].map((k) => el('i', { class: k < lv ? 'on' : k < own.has[t] ? 'off' : '' })))),
+          el('span', { class: 'up-btns' },
+            lv > 0 && el('button', { id: 'g-down-' + u.key, type: 'button', class: 'btn small', 'aria-label': `Take off ${u.name} stage ${lv}`, onclick: () => removeUpgrade(t) }, 'Take off'),
+            el('button', { id: 'g-up-' + u.key, type: 'button', class: 'btn', disabled: lv >= 3 || s.cash < cost, onclick: () => buyUpgrade(t) }, lv >= 3 ? 'Fully fitted' : refit ? `Refit stage ${lv + 1} · free` : `Stage ${lv + 1} · ${money(cost)}`)),
           el('p', { class: 'up-what' }, u.what)));
       });
       const nos = !!s.nitro;      // the nitro kit: bought once, fits every car
@@ -169,12 +179,22 @@ export function createUI(g) {
       cup ? el('p', { class: 'note', id: 'dlg-cupnote' }, `${LEVELS[cup.lv].name} cup under way. Round ${cup.round + 1} of 3 is next: the ${info.rounds[cup.round].name}.`)
         : s.kid ? el('p', { class: 'note' }, 'Kid mode is on: the rivals take it easy and the car drives itself.') : seg('Difficulty', LEVELS.slice(0, 3).map((L, i) => ({ id: 'dlg-lv-' + i, text: L.name, on: i === lv, pick: () => { g.setLevel(i); cupOffer(group); } }))),
       cup ? el('dl', { class: 'rows', id: 'dlg-cuptable' }, cupRows(cup)) : el('dl', { class: 'rows' }, [1, 2, 3].map((p) => [el('dt', { class: 'n' }, PLACES[p - 1]), el('dd', null, TROPHY[p - 1] + ' trophy'), el('dd', { class: 'pay' }, money(purse(p, lv)))])),
+      classNote(info.rounds[cup ? cup.round : 0], s),
       el('p', { class: 'note' }, info.carWon ? `You won the ${info.carName}.` : `Win the cup in all three regions to earn the ${info.carName}, a car that is not for sale. Race prize money is paid as well.`),
       el('div', { class: 'actions' },
-        el('button', { id: 'dlg-go', type: 'button', class: 'btn primary', onclick: () => g.startCup() }, cup ? `Start round ${cup.round + 1}` : 'Start round 1'),
+        el('button', { id: 'dlg-go', type: 'button', class: 'btn primary', disabled: !s.kid && !fitsClass(info.rounds[cup ? cup.round : 0], numbers(s.car).pr), onclick: () => g.startCup() }, cup ? `Start round ${cup.round + 1}` : 'Start round 1'),
         cup && el('button', { id: 'dlg-restart', type: 'button', class: 'btn', onclick: () => { g.dropCup(); cupOffer(group); } }, 'Start the cup over'),
         el('button', { id: 'dlg-no', type: 'button', class: 'btn', onclick: () => g.declineRace() }, 'Not now')),
     ], () => g.declineRace());
+  }
+
+  // the class line on a race card: what the race takes, and whether the car you are driving fits (kid mode: any car)
+  function classNote(def, s) {
+    if (def.cls == null) return null;
+    const pr = numbers(s.car).pr, name = CARS[s.car].base.name;
+    if (s.kid) return el('p', { class: 'note', id: 'dlg-class' }, `${limitText(def.cls)}. Kid mode takes any car.`);
+    if (fitsClass(def, pr)) return el('p', { class: 'note', id: 'dlg-class' }, `${limitText(def.cls)}. Your ${name} is ${classText(pr)}: good to go.`);
+    return el('p', { class: 'note warn', id: 'dlg-class' }, `${limitText(def.cls)}. Your ${name} is ${classText(pr)}, too quick for this one. Drive a slower car, or take some parts off in the garage (you can refit them later for free).`);
   }
 
   // def: the event shown; group: every event that starts from this light
@@ -191,8 +211,9 @@ export function createUI(g) {
       s.kid ? el('p', { class: 'note' }, 'Kid mode is on: the rivals take it easy and the car drives itself. Turn it off in the menu for Easy, Moderate or Hard.') : seg('Difficulty', LEVELS.slice(0, 3).map((L, i) => ({ id: 'dlg-lv-' + i, text: L.name, on: i === lv, pick: () => { g.setLevel(i); offer(def, group); } }))),
       g.ghostTime(def) != null && seg('Ghost', [{ id: 'dlg-gh-1', text: 'Race my ghost', on: s.ghost !== false, pick: () => { g.setGhost(true); offer(def, group); } }, { id: 'dlg-gh-0', text: 'No ghost', on: s.ghost === false, pick: () => { g.setGhost(false); offer(def, group); } }]),
       road && el('p', { class: 'note' }, 'On the grid: ' + def.rivals.map(rivalName).join(', ') + '. You start at the back.'),
+      classNote(def, s),
       el('dl', { class: 'rows' }, rows),
-      el('div', { class: 'actions' }, el('button', { id: 'dlg-go', type: 'button', class: 'btn primary', onclick: () => g.startRace(def) }, road ? 'Start race' : 'Start the clock'), el('button', { id: 'dlg-no', type: 'button', class: 'btn', onclick: () => g.declineRace() }, 'Not now')),
+      el('div', { class: 'actions' }, el('button', { id: 'dlg-go', type: 'button', class: 'btn primary', disabled: !s.kid && !fitsClass(def, numbers(s.car).pr), onclick: () => g.startRace(def) }, road ? 'Start race' : 'Start the clock'), el('button', { id: 'dlg-no', type: 'button', class: 'btn', onclick: () => g.declineRace() }, 'Not now')),
     ], () => g.declineRace());
   }
 
@@ -229,7 +250,7 @@ export function createUI(g) {
   }
 
   function pause() {
-    const racing = g.racing(), opt = g.options();
+    const racing = g.racing(), opt = g.options(), s = S();
     armed = false;
     card('pause', [
       el('span', { class: 'lbl' }, racing && !g.duoFree() ? 'Race paused' : 'Paused'), el('h2', { id: 'dlg-title' }, 'Menu'),
@@ -244,6 +265,9 @@ export function createUI(g) {
         el('button', { id: 'dlg-controls', type: 'button', class: 'btn', onclick: () => controls() }, 'Controls'),
         el('button', { id: 'dlg-tips', type: 'button', class: 'btn', 'aria-pressed': String(!!g.tipsOn()), onclick: () => { g.toggleTips(); pause(); focusOn($('dlg-tips')); } }, 'Tips ' + (g.tipsOn() ? 'on' : 'off')),
         el('button', { id: 'dlg-traffic', type: 'button', class: 'btn', 'aria-pressed': String(!!g.trafficOn()), onclick: () => { g.toggleTraffic(); pause(); focusOn($('dlg-traffic')); } }, 'Traffic ' + (g.trafficOn() ? 'on' : 'off')),
+        el('button', { id: 'dlg-damage', type: 'button', class: 'btn', 'aria-pressed': String(!!s.damage), onclick: () => { g.toggleSetting('damage'); pause(); focusOn($('dlg-damage')); } }, 'Crash damage ' + (s.damage ? 'on' : 'off')),
+        el('button', { id: 'dlg-extras', type: 'button', class: 'btn', 'aria-pressed': String(!!s.extras), onclick: () => { g.toggleSetting('extras'); pause(); focusOn($('dlg-extras')); } }, 'Interstate extras ' + (s.extras ? 'on' : 'off')),
+        el('button', { id: 'dlg-easyoval', type: 'button', class: 'btn', 'aria-pressed': String(!!s.easyOval), onclick: () => { g.toggleSetting('easyOval'); pause(); focusOn($('dlg-easyoval')); } }, 'Speedway rivals: ' + (s.easyOval ? 'easier' : 'standard')),
         el('button', { id: 'dlg-photo', type: 'button', class: 'btn', onclick: () => g.photo() }, 'Photo mode'),
         el('button', { id: 'dlg-goals', type: 'button', class: 'btn', onclick: () => goals() }, `Goals ${opt.goals.done}/${opt.goals.all}`),
         !racing && el('button', { id: 'dlg-school', type: 'button', class: 'btn', onclick: () => school() }, 'Driving tests'),

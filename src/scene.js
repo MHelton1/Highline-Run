@@ -781,7 +781,24 @@ export function buildSpeedway(world, scene) {
     for (const x of [-1.2, 1.2]) b.box(0.12, 2.6, 0.12, post, x, 1.3, -0.05);
     b.box(3.3, 2.1, 0.08, green, 0, 2.6, -0.06); b.plane(3.2, 2.0, mat, 0, 2.6, 0.01);
   }
+  if (W.canopy) {   // the truck stop: a fuel canopy on four posts over two pump islands, and a tall sign by the road
+    const c = W.canopy, T = world.places.truckStop, red = lam(0xb3261e), white = lam(0xe9e6da), dark = lam(0x2a2d31);
+    b.origin(c.x, W.H0, c.z, c.yaw);
+    b.box(c.d, 0.7, c.w, white, 0, c.h, 0); b.box(c.d + 0.1, 0.25, c.w + 0.1, red, 0, c.h - 0.3, 0);
+    for (const a of [-11, 11]) for (const l of [-5, 5]) b.box(0.35, c.h, 0.35, post, l, c.h / 2, a);
+    for (const a of [-6, 6]) { b.box(1.4, 0.2, 5, lam(0xbfc3c7), 0, 0.1, a); for (const k of [-1.4, 1.4]) { b.box(0.8, 1.6, 0.5, red, 0, 1, a + k); b.box(0.6, 0.4, 0.52, dark, 0, 1.3, a + k); } }
+    const tall = signTexture(256, 320, (g, w, h) => { g.fillStyle = '#b3261e'; g.fillRect(0, 0, w, h); g.fillStyle = '#f3efe4'; g.textAlign = 'center'; g.textBaseline = 'middle';
+      g.font = `700 64px ${FONT}`; g.fillText('MILE 10', w / 2, 70); g.font = `700 50px ${FONT}`; g.fillText('TRUCK', w / 2, 150); g.fillText('STOP', w / 2, 205); g.font = `600 30px ${FONT}`; g.fillText('DIESEL · DINER', w / 2, 275); });
+    const sx = T.x - T.lx * 52 - Math.sin(T.yaw) * 45, sz = T.z - T.lz * 52 - Math.cos(T.yaw) * 45;
+    b.origin(sx, W.H0, sz, Math.atan2(-T.lx, -T.lz));
+    b.box(0.5, 12, 0.5, post, 0, 6, 0); b.box(4.3, 5.3, 0.3, red, 0, 12.5, 0);
+    const tm = new THREE.MeshBasicMaterial({ map: tall }); b.plane(4, 5, tm, 0, 12.5, 0.17); b.plane(4, 5, tm, 0, 12.5, -0.17, 0, Math.PI);
+  }
   b.into(group, true, true);
+  if (W.canopy) {   // the truck stop's paved apron, from the interstate's edge out past the canopy and diner
+    const T = world.places.truckStop, ap = new THREE.Mesh(new THREE.PlaneGeometry(90, 170, 1, 1).rotateX(-Math.PI / 2), lam(0x6f7175));
+    ap.position.set(T.x - T.lx * 32, W.H0 + 0.02, T.z - T.lz * 32); ap.rotation.y = T.yaw; ap.receiveShadow = true; group.add(ap);
+  }
   // the prairie past the map's east edge, and a gravel verge beside the interstate out there
   const C = world.corridor, len = C.x1 + 1500 - world.half, grain = new THREE.MeshLambertMaterial({ color: 0x8a8448 });
   const ground = new THREE.Mesh(new THREE.PlaneGeometry(len, 5000, 1, 1).rotateX(-Math.PI / 2), grain);

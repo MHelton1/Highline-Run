@@ -229,13 +229,16 @@ const STYLES = {
     return {
       body: { len: [-L, L], rs: 0.07, tumble: 0.05,
         tw: (z) => (z > 0.5 || z < -1.6 ? 0.55 : 0.3),
-        w: [[-L, 0.8], [-L + 0.16, wOut - 0.05], [zr, wOut + 0.012], [-0.35, wOut - 0.055], [0.45, wOut - 0.07], [zf, wOut], [L - 0.32, wOut - 0.07], [L, 0.66]],
+        w: hyper ? [[-L, 0.86], [-L + 0.2, wOut - 0.02], [zr, wOut + 0.03], [-0.2, wOut - 0.08], [0.6, wOut - 0.09], [zf, wOut], [L - 0.32, wOut - 0.08], [L, 0.62]]
+          : [[-L, 0.8], [-L + 0.16, wOut - 0.05], [zr, wOut + 0.012], [-0.35, wOut - 0.055], [0.45, wOut - 0.07], [zf, wOut], [L - 0.32, wOut - 0.07], [L, 0.66]],
         sh, c: (z) => (z > 0.55 ? along([[0.55, 0.365], [zf, 0.335], [L - 0.22, 0.25], [L, 0.17]])(z) : z < -1.7 ? along([[-L, 0.385], [-L + 0.14, 0.44], [-1.7, 0.43]])(z) : sh(z) - 0.008),
         low: [[-L, B.y0 + 0.15], [-L + 0.3, B.y0 + 0.05], [-0.9, B.y0 + 0.012], [0.9, B.y0 + 0.012], [L - 0.36, B.y0 + 0.03], [L, B.y0 + 0.09]] },
-      cabin: { len: [-1.72, 0.56], h: [[-1.72, 0], [-0.62, 1], [-0.12, 1], [0.56, 0]], roof: roofY, belt: (z) => sh(z) - 0.012, wb: (z) => wOut - 0.22 + 0.03 * sstep(-0.4, -1.5, z), wt: 0.55, crown: 0.03 },
-      glass: { front: [-0.12, 0.56], rear: [-1.5, -0.62], side: [-1.12, 0.46], pillars: [] },
-      stripe: { cells: [3], zs: [[0.62, L - 0.2], [-L + 0.16, -1.74]], roof: [-0.62, -0.12] },
-      door: [-0.72, 0.4],
+      // the hypercar (build 39): its own mid-engined shape, the cabin pushed forward over a long, low engine deck
+      cabin: hyper ? { len: [-0.95, 1.08], h: [[-0.95, 0], [-0.15, 1], [0.22, 1], [1.08, 0]], roof: roofY - 0.06, belt: (z) => sh(z) - 0.012, wb: (z) => wOut - 0.24 + 0.02 * sstep(0.2, -0.8, z), wt: 0.5, crown: 0.04 }
+        : { len: [-1.72, 0.56], h: [[-1.72, 0], [-0.62, 1], [-0.12, 1], [0.56, 0]], roof: roofY, belt: (z) => sh(z) - 0.012, wb: (z) => wOut - 0.22 + 0.03 * sstep(-0.4, -1.5, z), wt: 0.55, crown: 0.03 },
+      glass: hyper ? { front: [0.22, 1.08], rear: [-0.8, -0.15], side: [-0.55, 0.98], pillars: [] } : { front: [-0.12, 0.56], rear: [-1.5, -0.62], side: [-1.12, 0.46], pillars: [] },
+      stripe: hyper ? { cells: [3], zs: [[1.12, L - 0.2], [-L + 0.16, -1.0]], roof: [-0.15, 0.22] } : { cells: [3], zs: [[0.62, L - 0.2], [-L + 0.16, -1.74]], roof: [-0.62, -0.12] },
+      door: hyper ? [-0.25, 0.85] : [-0.72, 0.4],
       arches: [{ z: zf, R: s.radius + 0.058, y: ax + 0.015 }, { z: zr, R: s.radius + 0.062, y: ax + 0.015 }],
       wheel: { n: 5, twin: true, wide: 0.1, rim: 0.72 }, rimTrim: false,
       parts(b, M) {
@@ -252,7 +255,9 @@ const STYLES = {
         if (hyper) {           // long low tail: a slim lip spoiler, big side intakes, a spine down the engine cover
           b.box(2 * wOut - 0.3, 0.03, 0.22, M.dark, 0, sh(-L + 0.2) + 0.04, -L + 0.12, null, -0.05);
           for (const sx of [1, -1]) { b.box(0.06, 0.22, 0.7, M.dark, sx * (wOut - 0.03), 0.2, zr + s.radius + 0.5, null, 0, sx * -0.12); b.box(0.04, 0.05, 1.6, M.dark, sx * (wOut - 0.06), sh(-0.6) - 0.02, -0.6); }
-          b.box(0.06, 0.06, 1.4, M.paint, 0, roofY - 0.02, -1.3, [1, 1], 0.12);
+          b.box(0.06, 0.08, 1.9, M.paint, 0, sh(-1.4) + 0.02, -1.45, [1, 1], 0.02);                               // spine down the engine deck
+          for (const x of [-0.25, 0, 0.25]) b.box(0.05, 0.03, 0.9, M.dark, x + 0.12 * Math.sign(x), sh(-1.5) - 0.002, -1.5);  // engine cover louvres
+          b.box(0.36, 0.09, 0.3, M.dark, 0, roofY - 0.02, 0.0, [0.8, 0.6]);                                       // roof air scoop
         }
         if (proto) {           // endurance prototype: full-width high wing on end plates, a shark fin, a roof scoop
           const wy = sh(-L + 0.3) + 0.42;
@@ -270,7 +275,8 @@ const STYLES = {
         b.box(1.36, 0.14, 0.1, M.dark, 0, B.y0 + 0.1, -L + 0.04); for (const x of [-0.45, -0.15, 0.15, 0.45]) b.box(0.02, 0.12, 0.2, M.dark, x, B.y0 + 0.07, -L + 0.04);   // diffuser
         b.box(0.44, 0.1, 0.02, M.plate, 0, 0.16, -L - 0.006);
       },
-      info: { top: roofY + 0.03, roofZ: -0.37, cargo: [0.9, 0.26, 0.8, 0, roofY + 0.17, -0.4], door: [wOut - 0.045, 0.1, -0.15, 0.5, 0.28], roof: [roofY + 0.034, -0.37, 0.44] },
+      info: hyper ? { top: roofY - 0.03, roofZ: 0.03, cargo: [0.9, 0.26, 0.8, 0, roofY + 0.11, 0.0], door: [wOut - 0.045, 0.1, 0.3, 0.5, 0.28], roof: [roofY - 0.026, 0.03, 0.3] }
+        : { top: roofY + 0.03, roofZ: -0.37, cargo: [0.9, 0.26, 0.8, 0, roofY + 0.17, -0.4], door: [wOut - 0.045, 0.1, -0.15, 0.5, 0.28], roof: [roofY + 0.034, -0.37, 0.44] },
     };
   },
 

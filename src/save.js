@@ -12,8 +12,8 @@ const KEY = 'highline.save';
 const num = (v, a, b, d) => (typeof v === 'number' && isFinite(v) ? Math.max(a, Math.min(b, v)) : d);
 
 export function freshSave() {
-  return { v: 1, cash: 0, runs: 0, car: 'hatch', cars: { hatch: { up: [0, 0, 0, 0], tune: stockTune('hatch'), paint: CARS.hatch.paint } },
-    best: {}, rank: {}, level: 1, units: 'imperial', muted: false, music: true, ghost: true, tod: 'day', weather: 'auto', at: 0, region: 'mountain', kid: false, tilt: false, buzz: true, traffic: true, cruise: false, bonus: false, nitro: false, tips: [], tipsOn: true, binds: null, daily: cleanDaily(null), stats: {}, done: [], cup: null, cups: {}, savedAt: 0 };
+  return { v: 1, cash: 0, runs: 0, car: 'hatch', cars: { hatch: { up: [0, 0, 0, 0], has: [0, 0, 0, 0], tune: stockTune('hatch'), paint: CARS.hatch.paint } },
+    best: {}, rank: {}, level: 1, units: 'imperial', muted: false, music: true, ghost: true, tod: 'day', weather: 'auto', at: 0, region: 'mountain', kid: false, tilt: false, buzz: true, traffic: true, cruise: false, bonus: false, extras: true, easyOval: true, damage: true, nitro: false, tips: [], tipsOn: true, binds: null, daily: cleanDaily(null), stats: {}, done: [], cup: null, cups: {}, savedAt: 0 };
 }
 
 // Anything read back from storage is checked and repaired field by field, so a damaged or hand-edited save cannot break the game.
@@ -25,15 +25,16 @@ export function cleanSave(raw) {
     const c = raw.cars[id]; if (!c || typeof c !== 'object') continue;
     const tune = stockTune(id);
     for (const t of TUNING) tune[t.key] = num(c.tune && c.tune[t.key], t.min, t.max, tune[t.key]);
-    s.cars[id] = { up: [0, 1, 2, 3].map((k) => Math.round(num(Array.isArray(c.up) ? c.up[k] : 0, 0, 3, 0))), tune, paint: Math.round(num(c.paint, 0, PAINTS.length - 1, CARS[id].paint)) };
+    const up = [0, 1, 2, 3].map((k) => Math.round(num(Array.isArray(c.up) ? c.up[k] : 0, 0, 3, 0)));
+    s.cars[id] = { dmg: Math.round(num(c.dmg, 0, 1, 0) * 100) / 100, up, has: up.map((v, k) => Math.max(v, Math.round(num(Array.isArray(c.has) ? c.has[k] : 0, 0, 3, 0)))), tune, paint: Math.round(num(c.paint, 0, PAINTS.length - 1, CARS[id].paint)) };
   }
   s.car = typeof raw.car === 'string' && Object.hasOwn(s.cars, raw.car) ? raw.car : 'hatch';
   for (const k of ['best', 'rank']) if (raw[k] && typeof raw[k] === 'object') {
     for (const id of Object.keys(raw[k]).slice(0, 64)) { const v = raw[k][id]; if (/^[a-z]{1,16}$/.test(id) && typeof v === 'number' && isFinite(v) && v > 0) s[k][id] = v; }
   }
   s.level = Math.round(num(raw.level, 0, 2, 1));                // race difficulty: 0 easy, 1 moderate, 2 hard
-  s.units = raw.units === 'metric' ? 'metric' : 'imperial'; s.muted = !!raw.muted; s.music = raw.music !== false; s.ghost = raw.ghost !== false; s.weather = ['auto', 'clear', 'storm'].includes(raw.weather) ? raw.weather : 'auto'; s.tod = ['day', 'sunset', 'night', 'cycle'].includes(raw.tod) ? raw.tod : 'day'; s.at = raw.at === 1 ? 1 : 0;
-  s.kid = raw.kid === true; s.tilt = raw.tilt === true; s.buzz = raw.buzz !== false; s.nitro = raw.nitro === true; s.tipsOn = raw.tipsOn !== false; s.traffic = raw.traffic !== false; s.cruise = raw.cruise === true; s.bonus = raw.bonus === true; s.daily = cleanDaily(raw.daily); s.binds = raw.binds && typeof raw.binds === 'object' ? cleanBinds(raw.binds) : null;   // null: the default controls
+  s.units = raw.units === 'metric' ? 'metric' : 'imperial'; s.muted = !!raw.muted; s.music = raw.music !== false; s.ghost = raw.ghost !== false; s.weather = ['auto', 'clear', 'storm'].includes(raw.weather) ? raw.weather : 'auto'; s.tod = ['day', 'sunset', 'night', 'cycle'].includes(raw.tod) ? raw.tod : 'day'; s.at = [1, 2].includes(raw.at) ? raw.at : 0;
+  s.kid = raw.kid === true; s.tilt = raw.tilt === true; s.buzz = raw.buzz !== false; s.nitro = raw.nitro === true; s.tipsOn = raw.tipsOn !== false; s.traffic = raw.traffic !== false; s.extras = raw.extras !== false; s.easyOval = raw.easyOval !== false; s.damage = raw.damage !== false; s.cruise = raw.cruise === true; s.bonus = raw.bonus === true; s.daily = cleanDaily(raw.daily); s.binds = raw.binds && typeof raw.binds === 'object' ? cleanBinds(raw.binds) : null;   // null: the default controls
   if (Array.isArray(raw.tips)) s.tips = [...new Set(raw.tips.filter((id) => TIP_IDS.includes(id)))];
   if (raw.stats && typeof raw.stats === 'object') for (const r of Object.keys(REGIONS)) {   // goal counters per region
     const st = raw.stats[r]; if (!st || typeof st !== 'object') continue;
@@ -50,7 +51,7 @@ export function cleanSave(raw) {
 // Everything a save holds, in dollars. Used only to pick a winner when two devices both changed things.
 export function worth(s) {
   let w = s.cash + s.runs;
-  for (const id in s.cars) { w += CARS[id].price || CARS[id].value; s.cars[id].up.forEach((lv, t) => { for (let k = 0; k < lv; k++) w += upgradeCost(id, t, k); }); }
+  for (const id in s.cars) { w += CARS[id].price || CARS[id].value; (s.cars[id].has || s.cars[id].up).forEach((lv, t) => { for (let k = 0; k < lv; k++) w += upgradeCost(id, t, k); }); }
   return w;
 }
 

@@ -82,17 +82,23 @@ export class Rival {
 // load before one goes up (s), the wait before the next (s), and how far behind the player backup arrives (m)
 export const ROADBLOCK = { ahead: 420, lat: [-3.0, 4.0], life: 150, after: 25, cool: 70, backup: 450, backupCool: 90 };
 
+// a sample index along a road: wraps round a closed road, stops at the ends of an open one
+const wrap = (r, i) => r.closed ? ((i % r.n) + r.n) % r.n : Math.max(0, Math.min(r.n - 1, i));
+// the roads the patrols drive: the ring road, or on a map whose first road is a race track (the speedway) the roads
+// listed in world.beats, one per patrol (an open road is driven end to end and back)
+const beatRoads = (world) => (world.beats || [0, 0, 0]).map((k) => world.roads[k]);
+
 export class Patrol {
-  constructor(world, idx, dir) {
-    this.world = world; this.ring = world.roads[0]; this.car = new Vehicle(world, PATROL_SPEC); this.idx = idx; this.dir = dir;
+  constructor(world, idx, dir, road) {
+    this.world = world; this.ring = road || world.roads[0]; this.car = new Vehicle(world, PATROL_SPEC); this.idx = idx; this.dir = dir;
     this.mode = 'patrol'; this.stuck = 0; this.lost = 0; this.input = { steer: 0, throttle: 0, brake: 0, handbrake: false, analog: true };
     this.toRoad(idx);
   }
-  toRoad(i) { const r = this.ring, j = (i + this.dir + r.n) % r.n; this.idx = i; this.car.place(r.x[i], r.z[i], Math.atan2(r.x[j] - r.x[i], r.z[j] - r.z[i])); this.stuck = 0; }
+  toRoad(i) { const r = this.ring; i = wrap(r, i); if (!r.closed && (i + this.dir < 0 || i + this.dir >= r.n)) this.dir = -this.dir; const j = wrap(r, i + this.dir); this.idx = i; this.car.place(r.x[i], r.z[i], Math.atan2(r.x[j] - r.x[i], r.z[j] - r.z[i])); this.stuck = 0; }
   nearestIdx(all) {
     const r = this.ring, c = this.car; let best = this.idx, bd = 1e18;
     if (all) { for (let i = 0; i < r.n; i += 3) { const d = (r.x[i] - c.pos.x) ** 2 + (r.z[i] - c.pos.z) ** 2; if (d < bd) { bd = d; best = i; } } }
-    else for (let k = -30; k <= 30; k++) { const i = (this.idx + k + r.n) % r.n, d = (r.x[i] - c.pos.x) ** 2 + (r.z[i] - c.pos.z) ** 2; if (d < bd) { bd = d; best = i; } }
+    else for (let k = -30; k <= 30; k++) { const i = wrap(r, this.idx + k), d = (r.x[i] - c.pos.x) ** 2 + (r.z[i] - c.pos.z) ** 2; if (d < bd) { bd = d; best = i; } }
     this.idx = best; return Math.sqrt(bd);
   }
   // hot: the player carries cargo; wanted: a hot load, seen from further away and harder to shake off
@@ -114,15 +120,16 @@ export class Patrol {
       ang = angTo(c, player.pos.x + player.vel.x * lead, player.pos.z + player.vel.z * lead);
       vT = d < 13 && player.speed < 5 ? 0 : Math.abs(ang) > 0.7 ? 12 : d < 25 ? Math.max(player.speed + 4, 8) : 60;
     } else {
-      const off = this.nearestIdx(false), look = Math.max(7, c.speed * 0.4) | 0, t = (this.idx + this.dir * look + r.n * 4) % r.n;
-      const t1 = (t + this.dir + r.n) % r.n, lx = r.x[t1] - r.x[t], lz = r.z[t1] - r.z[t], ll = Math.hypot(lx, lz) || 1;
+      const off = this.nearestIdx(false), look = Math.max(7, c.speed * 0.4) | 0;
+      if (!r.closed && (this.dir > 0 ? this.idx > r.n - 1 - look - 6 : this.idx < look + 6)) this.dir = -this.dir;   // end of an open road: turn back
+      const t = wrap(r, this.idx + this.dir * look), t1 = wrap(r, t + this.dir), lx = r.x[t1] - r.x[t], lz = r.z[t1] - r.z[t], ll = Math.hypot(lx, lz) || 1;
       // keep to the right-hand lane; pull into the other lane to pass a slow car ahead
       const px = player.pos.x - c.pos.x, pz = player.pos.z - c.pos.z, ahead = px * c.fwd.x + pz * c.fwd.z, side = px * c.left.x + pz * c.left.z;
       const blocked = ahead > 0 && ahead < 30 && Math.abs(side) < 3.4 && player.vel.x * c.fwd.x + player.vel.z * c.fwd.z < 7;
       this.pass = blocked ? 1.5 : Math.max(0, (this.pass || 0) - dt);
       const lane = this.pass > 0 ? -3.2 : 2.4;
       ang = angTo(c, r.x[t] - lz / ll * lane, r.z[t] + lx / ll * lane);
-      const a = (this.idx + this.dir * 12 + r.n * 4) % r.n, b = (this.idx + this.dir * 36 + r.n * 4) % r.n, a2 = (a + this.dir + r.n) % r.n, b2 = (b + this.dir + r.n) % r.n;
+      const a = wrap(r, this.idx + this.dir * 12), b = wrap(r, this.idx + this.dir * 36), a2 = wrap(r, a + this.dir), b2 = wrap(r, b + this.dir);
       let turn = Math.atan2(r.x[b2] - r.x[b], r.z[b2] - r.z[b]) - Math.atan2(r.x[a2] - r.x[a], r.z[a2] - r.z[a]); turn = Math.abs(Math.atan2(Math.sin(turn), Math.cos(turn)));
       vT = off > 30 ? 12 : clamp(17 - turn * 14, 9, 17);
       if (this.pass > 0) vT = Math.min(vT, ahead > 0 && ahead < 10 && Math.abs(side) < 2.3 ? 3 : 10);
@@ -141,8 +148,8 @@ export class Game {
     this.world = world; this.player = player; this.bank = bank; this.sites = world.places.sites;
     this.job = null; this.offers = []; this.kinds = new Map(); this.events = []; this.frozen = false; this.rival = null;
     this.dwell = 0; this.bust = 0; this.heat = 0; this.hurtT = 0; this.rammed = 0; this.nearest = 1e9;
-    const n = world.roads[0].n;
-    this.patrols = [new Patrol(world, Math.floor(n * 0.36), 1), new Patrol(world, Math.floor(n * 0.7), -1), new Patrol(world, Math.floor(n * 0.9), 1)];
+    const beats = beatRoads(world);
+    this.patrols = [[0.36, 1], [0.7, -1], [0.9, 1]].map(([u, dir], k) => new Patrol(world, Math.floor(beats[k].n * u), dir, beats[k]));
     this.chaseT = 0; this.blockCool = 0; this.backupCool = 0;
     this.refill(null);
   }
@@ -150,19 +157,22 @@ export class Game {
   get extras() { return this.patrols.filter((p) => p.temp); }
   clearExtras() { this.patrols = this.patrols.filter((p) => !p.temp); }
   // where the player is on the ring road: sample index, which way along it they are heading, and how far off it they are
+  // (on the speedway: the nearest of the patrols' roads, as r)
   ringSpot() {
-    const r = this.world.roads[0], p = this.player; let i0 = 0, bd = 1e18;
-    for (let i = 0; i < r.n; i += 2) { const d = (r.x[i] - p.pos.x) ** 2 + (r.z[i] - p.pos.z) ** 2; if (d < bd) { bd = d; i0 = i; } }
-    const j = (i0 + 1) % r.n, tx = r.x[j] - r.x[i0], tz = r.z[j] - r.z[i0], h = p.speed > 3 ? p.vel : p.fwd;
-    return { i: i0, dir: tx * h.x + tz * h.z >= 0 ? 1 : -1, off: Math.sqrt(bd) };
+    const p = this.player; let r = this.world.roads[0], i0 = 0, bd = 1e18;
+    for (const road of new Set(beatRoads(this.world))) for (let i = 0; i < road.n; i += 2) { const d = (road.x[i] - p.pos.x) ** 2 + (road.z[i] - p.pos.z) ** 2; if (d < bd) { bd = d; i0 = i; r = road; } }
+    if (!r.closed && i0 >= r.n - 1) i0 = r.n - 2;
+    const j = i0 + 1, tx = r.x[j] - r.x[i0], tz = r.z[j] - r.z[i0], h = p.speed > 3 ? p.vel : p.fwd;
+    return { r, i: i0, dir: tx * h.x + tz * h.z >= 0 ? 1 : -1, off: Math.sqrt(bd) };
   }
   // two patrol cars parked across the ring road some way ahead, with a gap just wide enough for a car at one side
   setBlock() {
-    const r = this.world.roads[0], spot = this.ringSpot(); if (spot.off > 140) return false;
-    const ahead = Math.round(ROADBLOCK.ahead / (r.ds || 2)), bi = (spot.i + spot.dir * ahead + r.n * 4) % r.n, f = this.world.frame(r, bi), flip = Math.random() < 0.5 ? 1 : -1;
+    const spot = this.ringSpot(), r = spot.r; if (spot.off > 140) return false;
+    const ahead = Math.round(ROADBLOCK.ahead / (r.ds || 2)), bi = wrap(r, spot.i + spot.dir * ahead); if (!r.closed && Math.abs(bi - spot.i) < ahead / 2) return false;
+    const f = this.world.frame(r, bi), flip = Math.random() < 0.5 ? 1 : -1;
     this.blockAt = { x: f.x, z: f.z, idx: bi };
     for (const lat of ROADBLOCK.lat) {
-      const pt = new Patrol(this.world, bi, spot.dir), l = lat * flip;
+      const pt = new Patrol(this.world, bi, spot.dir, r), l = lat * flip;
       pt.car.place(f.x + f.lx * l, f.z + f.lz * l, Math.atan2(f.lx, f.lz) + (l > 0 ? 0.25 : -0.25));
       pt.mode = 'block'; pt.temp = 'block'; pt.age = 0; pt.input.handbrake = true; this.patrols.push(pt);
     }
@@ -170,9 +180,9 @@ export class Game {
   }
   // one more patrol, coming up the ring road from behind the player
   callBackup() {
-    const r = this.world.roads[0], spot = this.ringSpot(); if (spot.off > 300) return false;
-    const back = Math.round(ROADBLOCK.backup / (r.ds || 2)), bi = (spot.i - spot.dir * back + r.n * 4) % r.n;
-    const pt = new Patrol(this.world, bi, spot.dir); pt.mode = 'chase'; pt.temp = 'backup'; pt.age = 0; this.patrols.push(pt);
+    const spot = this.ringSpot(), r = spot.r; if (spot.off > 300) return false;
+    const back = Math.round(ROADBLOCK.backup / (r.ds || 2)), bi = wrap(r, spot.i - spot.dir * back);
+    const pt = new Patrol(this.world, bi, spot.dir, r); pt.mode = 'chase'; pt.temp = 'backup'; pt.age = 0; this.patrols.push(pt);
     this.emit('backup', {}); return true;
   }
   // called once a frame: put up a roadblock and call backup when a run gets hot, and send extras away when they are done
@@ -193,9 +203,14 @@ export class Game {
   get cash() { return this.bank.cash; }
   // after a race or a long stop: spread the patrols around the ring, away from the player
   scatter() {
-    const r = this.world.roads[0], p = this.player.pos; let near = 0, bd = 1e18;
-    for (let i = 0; i < r.n; i += 4) { const d = (r.x[i] - p.x) ** 2 + (r.z[i] - p.z) ** 2; if (d < bd) { bd = d; near = i; } }
-    this.patrols.forEach((pt, k) => { pt.mode = 'patrol'; pt.pass = 0; pt.toRoad((near + Math.floor(r.n * (0.3 + k * 0.22))) % r.n); });
+    const p = this.player.pos;
+    this.patrols.forEach((pt, k) => {
+      const r = pt.ring; let near = 0, bd = 1e18;
+      for (let i = 0; i < r.n; i += 4) { const d = (r.x[i] - p.x) ** 2 + (r.z[i] - p.z) ** 2; if (d < bd) { bd = d; near = i; } }
+      // round a closed road: spread out away from the player; along an open one: the far part of the road from them
+      const i = r.closed ? (near + Math.floor(r.n * (0.3 + k * 0.22))) % r.n : Math.floor((near < r.n / 2 ? 0.6 + k * 0.15 : 0.1 + k * 0.15) * r.n);
+      pt.mode = 'patrol'; pt.pass = 0; pt.toRoad(i);
+    });
     this.heat = 0; this.bust = 0; this.clearExtras(); this.chaseT = 0;
   }
   emit(type, data) { this.events.push({ type, ...data }); }

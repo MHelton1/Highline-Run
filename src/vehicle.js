@@ -207,7 +207,7 @@ export class Vehicle {
       this.pointVel(tmp, vc);
       const vn = vc.x * q.nx + vc.y * q.ny + vc.z * q.nz;
       const fn = clamp(m * (69 * pen - 8.5 * vn), 0, m * G * 6);
-      if (-vn > this.impact) this.impact = -vn;
+      if (-vn > this.impact) { this.impact = -vn; this.hitX = tmp.x; this.hitY = tmp.y; this.hitZ = tmp.z; }   // where, for crash damage
       fvec.set(q.nx, q.ny, q.nz).multiplyScalar(fn);
       vc.x -= q.nx * vn; vc.y -= q.ny * vn; vc.z -= q.nz * vn;
       const vt = vc.length();
@@ -295,7 +295,7 @@ export class Vehicle {
             // the knock turns the car about its middle, by how far off-centre it landed (a corner clipped spins it)
             const px = fx * ca + lx * cl, pz = fz * ca + lz * cl;
             this.angVel.y += (pz * nx - px * nz) * -vn * 0.3;
-            if (-vn > this.impact) this.impact = -vn;
+            if (-vn > this.impact) { this.impact = -vn; this.hitX = this.pos.x + px; this.hitY = this.pos.y + 0.4; this.hitZ = this.pos.z + pz; }
           }
         }
       }
@@ -319,6 +319,7 @@ export function collideCars(a, b) {
     const jn = -1.25 * vn * 0.5, ja = jn * ka, jb = jn * kb;
     a.vel.x += nx * ja; a.vel.y += ny * ja; a.vel.z += nz * ja; b.vel.x -= nx * jb; b.vel.y -= ny * jb; b.vel.z -= nz * jb;
     a.angVel.y += (a.fwd.z * i * nx - a.fwd.x * i * nz) * ja * 0.35; b.angVel.y -= (b.fwd.z * j * nx - b.fwd.x * j * nz) * jb * 0.35;
+    if (-vn > hit) { const mx = (ax + bx) / 2, my = (ay + by) / 2 + 0.3, mz = (az + bz) / 2; a.hitX = b.hitX = mx; a.hitY = b.hitY = my; a.hitZ = b.hitZ = mz; }   // for crash damage
     hit = Math.max(hit, -vn);
   }
   return hit;

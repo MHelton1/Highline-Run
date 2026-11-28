@@ -41,6 +41,18 @@ const OUT = process.argv[2] || path.join(__dirname, 'shots'); require('fs').mkdi
   check('interstate', far.x > 16050 && Math.abs(far.y - 40.9) < 0.6 && far.up > 0.97, far);
   await snap('interstate');
   await p.keyboard.press('KeyG'); await snap('farmap', 800); await p.evaluate(() => window.__game.closeMap());
+  // interstate extras (build 39): the truck stop, its garage and drag races, and traffic out on the interstate
+  const stop = await p.evaluate(() => { const g = window.__game, T = g.world.places.truckStop, G = g.world.places.garages.find((q) => q.far);
+    g.store.data.traffic = true; g.store.data.extras = true; g.traffic.on = true; g.traffic.extras = true;
+    const r = g.world.roads[4], i = G.idx - 60, f = g.world.frame(r, i); g.car.place(f.x - f.lx * 5, f.z - f.lz * 5, f.yaw); g.car.vel.copy(g.car.fwd).multiplyScalar(25);
+    for (let k = 0; k < 40; k++) g.advance(0.25, { steer: 0, throttle: 0.5, brake: 0, handbrake: false, analog: true });
+    const drags = g.races.filter((d) => d.spot === 'drag').map((d) => d.id), zone = g.zones.find((z) => z.extra);
+    return { garage: G.name, drags, zone: !!zone, traffic: g.traffic.list.filter((t) => t.open).length, x: Math.round(g.car.pos.x) }; });
+  check('truckstop', stop.garage === 'Mile 10 Truck Stop' && stop.drags.join() === 'drag,dragx' && stop.zone && stop.traffic > 0, stop);
+  await p.evaluate(() => { const g = window.__game, G = g.world.places.garages.find((q) => q.far), f = g.world.frame(g.world.roads[4], G.idx - 90); g.traffic.clear(); g.car.place(f.x - f.lx * 3, f.z - f.lz * 3, f.yaw + 0.5); g.advance(0.8); });
+  await snap('truckstop');
+  const off = await p.evaluate(() => { const g = window.__game; g.toggleSetting('extras'); g.advance(1); const n = g.traffic.list.filter((t) => t.open).length; const b = g.store.data.extras; g.toggleSetting('extras'); return { n, extras: b }; });
+  check('extras off', off.n === 0 && off.extras === false, off);
   await p.evaluate(() => { const g = window.__game, W = g.world.speedway; g.car.place(W.xE - 260, W.zI - 4, Math.PI / 2); g.advance(0.8); });
   await snap('farTown');
   await p.evaluate(() => { const g = window.__game, B = g.world.places.farBarn; const nr = g.world.nearestRoad(B.x, B.z), a = Math.atan2(nr.x - B.x, nr.z - B.z); g.car.place(B.x + Math.sin(a) * 24, B.z + Math.cos(a) * 24, a + Math.PI); g.advance(0.8); });

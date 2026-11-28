@@ -10,7 +10,7 @@ import { SURF } from './terrain.js';
 
 // n: cars at once (phones: nTouch). spawn: how far away new cars appear, metres along the road and at least `seen` in a
 // straight line. gone: cars further than this are taken away. vOpen/vTown: top speeds, m/s (about 52 and 30 mph).
-export const TRAFFIC = { n: 10, nTouch: 7, spawn: [170, 460], seen: 150, gone: 600, clear: 40, vOpen: 23.5, vTown: 13.5, skill: 0.5 };
+export const TRAFFIC = { n: 10, nTouch: 7, spawn: [170, 460], seen: 150, gone: 600, clear: 40, vOpen: 23.5, vFast: 31, vTown: 13.5, skill: 0.5 };
 const KINDS = ['wagon', 'hatch', 'wagon', 'truck', 'hatch', 'sprint'];
 export const TRAFFIC_PAINTS = [0x9aa0a6, 0x2d3a4a, 0x7a2a26, 0xd9d6cf, 0x3e5a3c, 0x202224, 0x8c7a5c, 0x4a6a8a, 0xb8b2a4, 0x5c2f3e];
 const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
@@ -55,16 +55,17 @@ export class Commuter extends Driver {
 export class Traffic {
   // opt: n (cars at once), rnd (random numbers, for tests)
   constructor(world, opt = {}) {
-    this.world = world; this.max = opt.n ?? TRAFFIC.n; this.rnd = opt.rnd || Math.random; this.cars = []; this.on = true; this.spawnT = 0; this.nextId = 1;
+    this.world = world; this.max = opt.n ?? TRAFFIC.n; this.rnd = opt.rnd || Math.random; this.cars = []; this.on = true; this.extras = true; this.spawnT = 0; this.nextId = 1;
     this.routes = [];
     world.roads.forEach((road, r) => {
-      if (!road.closed || road.surf !== SURF.ASPHALT) return;
+      // loops of tarmac, and the speedway's interstate (open at both ends: cars leave at the ends); never the race oval
+      if (road.noTraffic || road.surf !== SURF.ASPHALT || (!road.closed && !road.interstate)) return;
       for (const rev of [false, true]) {
         const path = makePath(road, rev), slow = new Uint8Array(path.n);
         // slow through towns: anywhere within 260 m of a town on this road
         const towns = (world.towns || []).filter((t) => t.road === r);
         for (let i = 0; i < path.n; i++) for (const t of towns) if ((path.x[i] - t.x) ** 2 + (path.z[i] - t.z) ** 2 < 260 * 260) { slow[i] = 1; break; }
-        this.routes.push({ r, road, path, slow, rev });
+        this.routes.push({ r, road, path, slow, rev, open: !road.closed, fast: !!road.interstate });
       }
     });
   }
@@ -76,6 +77,7 @@ export class Traffic {
     const P = player.pos, all = [player, ...others, ...this.cars.map((t) => t.car)];
     this.cars = this.cars.filter((t) => {
       const d = Math.hypot(t.car.pos.x - P.x, t.car.pos.z - P.z);
+      if (t.open && (t.driver.track.idx > t.driver.path.n - 70 || !this.extras)) return false;   // off the end of the interstate
       return d < TRAFFIC.gone && !(t.driver.wreck && d > 90) && !(t.driver.wreck && t.driver.age > 40);
     });
     if (!this.on) { this.cars.length = 0; return; }
@@ -85,21 +87,25 @@ export class Traffic {
   // a new car somewhere along a road near the player, far enough away not to be seen appearing
   spawn(player, others = []) {
     const P = player.pos, w = this.world, rnd = this.rnd;
-    const near = this.routes.filter((rt) => !rt.rev).map((rt) => { let bi = 0, bd = 1e18; const p = rt.path; for (let i = 0; i < p.n; i += 4) { const d = (p.x[i] - P.x) ** 2 + (p.z[i] - P.z) ** 2; if (d < bd) { bd = d; bi = i; } } return { rt, i: bi, d: Math.sqrt(bd) }; })
+    const near = this.routes.filter((rt) => !rt.rev && (this.extras || !rt.fast)).map((rt) => { let bi = 0, bd = 1e18; const p = rt.path; for (let i = 0; i < p.n; i += 4) { const d = (p.x[i] - P.x) ** 2 + (p.z[i] - P.z) ** 2; if (d < bd) { bd = d; bi = i; } } return { rt, i: bi, d: Math.sqrt(bd) }; })
       .filter((q) => q.d < TRAFFIC.spawn[1]);
     if (!near.length) return null;
     const q = near[Math.floor(rnd() * near.length)], rev = rnd() < 0.5, rt = this.routes.find((x) => x.r === q.rt.r && x.rev === rev) || q.rt, p = rt.path;
     const along = (TRAFFIC.spawn[0] + rnd() * (TRAFFIC.spawn[1] - TRAFFIC.spawn[0])) * (rnd() < 0.5 ? -1 : 1);
-    const roadIdx = ((q.i + Math.round(along / p.ds)) % p.n + p.n) % p.n, pi = p.of(roadIdx), f = p.at(pi);
-    const lane = -(p.hw * 0.42), x = f.x + f.tz * lane, z = f.z - f.tx * lane;
+    let roadIdx;
+    if (rt.open) { roadIdx = rt.road.from + q.i + Math.round(along / p.ds); if (roadIdx < rt.road.from + 60 || roadIdx > rt.road.to - 140) return null; }
+    else roadIdx = ((q.i + Math.round(along / p.ds)) % p.n + p.n) % p.n;
+    const pi = p.of(roadIdx), f = p.at(pi);
+    // the interstate has three lanes each way: any of them, a little quicker than town roads
+    const lane = rt.fast ? -[2.2, 5.6, 9][Math.floor(rnd() * 3)] : -(p.hw * 0.42), x = f.x + f.tz * lane, z = f.z - f.tx * lane;
     if (Math.hypot(x - P.x, z - P.z) < TRAFFIC.seen) return null;
     for (const o of [player, ...others, ...this.cars.map((t) => t.car)]) if (Math.hypot(o.pos.x - x, o.pos.z - z) < TRAFFIC.clear) return null;
     if (w.waterAt && w.sample(x, z) < w.waterAt(x, z) - 0.5) return null;
     const kind = KINDS[Math.floor(rnd() * KINDS.length)], car = new Vehicle(w, buildSpec(kind));
     car.place(x, z, f.yaw);
-    const driver = new Commuter(car, p, rt.slow, { skill: TRAFFIC.skill, vcap: TRAFFIC.vOpen * (0.88 + rnd() * 0.17), lane, idx: pi });
+    const driver = new Commuter(car, p, rt.slow, { skill: TRAFFIC.skill, vcap: (rt.fast ? TRAFFIC.vFast : TRAFFIC.vOpen) * (0.88 + rnd() * 0.17), lane, idx: pi });
     const v0 = Math.min(driver.v[pi], rt.slow[pi] ? TRAFFIC.vTown : 99) * 0.8; car.vel.set(car.fwd.x * v0, 0, car.fwd.z * v0);
-    const t = { id: this.nextId++, car, driver, kind, paint: TRAFFIC_PAINTS[Math.floor(rnd() * TRAFFIC_PAINTS.length)] };
+    const t = { id: this.nextId++, open: rt.open, car, driver, kind, paint: TRAFFIC_PAINTS[Math.floor(rnd() * TRAFFIC_PAINTS.length)] };
     this.cars.push(t);
     return t;
   }

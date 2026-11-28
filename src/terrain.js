@@ -246,7 +246,9 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     const lay = (p3, extra) => {
       const r = resample(p3.map((q) => [q[0], q[1]]), false, 2), hh = new Float32Array(r.n); let j = 0;
       for (let i = 0; i < r.n; i++) { let bd = 1e18; for (let k = Math.max(0, j - 4); k < Math.min(p3.length, j + 40); k++) { const d = (p3[k][0] - r.x[i]) ** 2 + (p3[k][1] - r.z[i]) ** 2; if (d < bd) { bd = d; j = k; } } hh[i] = p3[j][2]; }
-      roads.push({ ...r, h: hh, closed: false, ...extra }); return roads[roads.length - 1];
+      const bb = p3[0].length > 3 ? new Float32Array(r.n) : null;   // a 4th value per point: banking (rise per metre to the left)
+      if (bb) { let jj = 0; for (let i = 0; i < r.n; i++) { let bd = 1e18; for (let k = Math.max(0, jj - 4); k < Math.min(p3.length, jj + 40); k++) { const d = (p3[k][0] - r.x[i]) ** 2 + (p3[k][1] - r.z[i]) ** 2; if (d < bd) { bd = d; jj = k; } } bb[i] = p3[jj][3]; } }
+      roads.push({ ...r, h: hh, closed: false, ...(bb ? { bank: bb } : {}), ...extra }); return roads[roads.length - 1];
     };
     // the frontstretch: from index 0 to its east end; its dogleg apex is the start and finish line
     let kEnd = 0, kApex = 0; for (let k = 0; k < n / 2; k++) { if (oval.x[k] < C[0] + LX) kEnd = k; if (oval.z[k] > oval.z[kApex]) kApex = k; }
@@ -260,8 +262,10 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       roads.push({ ...t, h: th, closed: false, hw: 3.5, surf: SURF.DIRT, blend: 95, name: RG.trail });
     }
     // pit lane: inside the frontstretch, 25 m in from the track's centre line, joining the apron at either end
-    const k0 = -26, k1 = kEnd + 18, pitO = (k) => 6 + 19 * smooth((k - k0) / 45) * smooth((k1 - k) / 45), pit = [];
-    for (let k = k0; k <= k1; k++) { const f = fr(k), oo = pitO(k); pit.push([f.x + f.lx * oo, f.z + f.lz * oo, H0 + 0.3 + Math.max(0, HW - oo) * tanB[f.i]]); }
+    const k0 = -26, k1 = kEnd + 18, pitO = (k) => HW + 6.5 + (25 - HW - 6.5) * smooth((k - k0) / 45) * smooth((k1 - k) / 45), pit = [];
+    // it meets the track at the foot of the banking, where both are level (build 39: it used to run onto the banking and
+    // left a drop along its inner edge)
+    for (let k = k0; k <= k1; k++) { const f = fr(k), oo = pitO(k); pit.push([f.x + f.lx * oo, f.z + f.lz * oo, H0 + 0.3]); }
     lay(pit, { hw: 6, surf: SURF.ASPHALT, blend: 40, name: RG.pit, pit: true });
     // Speedway Boulevard: off the pit lane into the infield, round, out under the pit lane and the track through the
     // tunnel, north to Trackside's main street, east through town and up the on-ramp onto the interstate
@@ -385,7 +389,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   const beside = (f, side, d) => [f.x + f.lx * side * d, f.z + f.lz * side * d];
   if (SPEED) {
     // Trackside Garage on the boulevard's main street, the Infield Garage off the pit lane; pickups in town, at the
-    // interstate's truck stop and grain elevator and out on the ranch road
+    // gravel yard and grain elevator by the interstate, and out on the ranch road
     const near = (road, x, z) => { let b = 0, bd = 1e18; for (let i = 0; i < road.n; i++) { const d = (road.x[i] - x) ** 2 + (road.z[i] - z) ** 2; if (d < bd) { bd = d; b = i; } } return b; };
     [[RG.garages[0], 3, 200, SPW.zM, -1], [RG.garages[1], 2, SPW.C[0] - 130, SPW.C[1] + SPW.R - 25, 1]].forEach(([name, r, tx, tz, side]) => {
       const road = roads[r], idx = near(road, tx, tz), f = frame(road, idx);
@@ -393,6 +397,13 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
       const [x, z] = beside(f, side, road.hw + 11), [bx, bz] = beside(f, side, road.hw + 27);
       places.garages.push({ name, idx, side, x, z, yaw: f.yaw, bx, bz, byaw: Math.atan2(-f.lx * side, -f.lz * side), road: r });
     });
+    { // the truck stop halfway along the interstate (build 39): a garage, a diner and fuel canopy, and the drag strip's line
+      const road = roads[4], idx = near(road, SPW.xI + 10 * 1609.34, SPW.zI), f = frame(road, idx), side = 1;
+      const [x, z] = beside(f, side, road.hw + 11), [bx, bz] = beside(f, side, road.hw + 27);
+      places.garages.push({ name: RG.truckStop, idx, side, x, z, yaw: f.yaw, bx, bz, byaw: Math.atan2(-f.lx * side, -f.lz * side), road: 4, far: true });
+      places.lines.drag = { road: 4, idx: idx + 70 };
+      places.truckStop = { idx, x: f.x + f.lx * side * (road.hw + 70), z: f.z + f.lz * side * (road.hw + 70), yaw: f.yaw, lx: f.lx * side, lz: f.lz * side };
+    }
     [[3, 680, SPW.zM, 1], [4, 1750, SPW.zI, -1], [4, 1300, SPW.zI, 1], [1, 0.5], [1, 0.14]].forEach(([r, a, b, sd], k) => {
       const road = roads[r], idx = b === undefined ? Math.floor(road.n * a) : near(road, a, b), f = frame(road, idx), side = sd ?? (k % 2 ? 1 : -1);
       shoulders.push({ r, idx, side, f, len: 9, width: 13 });
@@ -465,7 +476,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   for (const road of roads) road.ref = new Int32Array(V * V).fill(-1);
   for (const road of roads) if (road.bank) {        // unit left vectors, for the banked bed
     road.lx = new Float32Array(road.n); road.lz = new Float32Array(road.n);
-    for (let i = 0; i < road.n; i++) { const a = (i - 1 + road.n) % road.n, b = (i + 1) % road.n, tx = road.x[b] - road.x[a], tz = road.z[b] - road.z[a], l = Math.hypot(tx, tz); road.lx[i] = tz / l; road.lz[i] = -tx / l; }
+    for (let i = 0; i < road.n; i++) { const a = road.closed ? (i - 1 + road.n) % road.n : Math.max(0, i - 1), b = road.closed ? (i + 1) % road.n : Math.min(road.n - 1, i + 1), tx = road.x[b] - road.x[a], tz = road.z[b] - road.z[a], l = Math.hypot(tx, tz); road.lx[i] = tz / l; road.lz[i] = -tx / l; }
   }
   const stamps = roads.map((road) => {
     const D = road.blend, d2 = new Float32Array(V * V).fill(1e12), idx = new Int32Array(V * V).fill(-1);
@@ -732,16 +743,28 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   for (const road of farRoads) for (let i = 0; i < road.n; i += 1) {
     if (road.x[i] < HALF - 60) continue;
     const r = Math.ceil((road.hw + RAMP) / FB) + 1, bx = Math.floor(road.x[i] / FB), bz = Math.floor(road.z[i] / FB);
-    for (let a = -r; a <= r; a++) for (let c = -r; c <= r; c++) { const key = (bx + a) * 8192 + (bz + c); let l = farIdx.get(key); if (!l) farIdx.set(key, l = []); if (!l.some((q) => q[0] === road)) l.push([road, i]); }
+    for (let a = -r; a <= r; a++) for (let c = -r; c <= r; c++) {   // each bucket keeps, per road, the sample nearest its middle
+      const key = (bx + a) * 8192 + (bz + c), mx = (bx + a + 0.5) * FB, mz = (bz + c + 0.5) * FB, d = (road.x[i] - mx) ** 2 + (road.z[i] - mz) ** 2;
+      let l = farIdx.get(key); if (!l) farIdx.set(key, l = []);
+      const e = l.find((q) => q[0] === road); if (!e) l.push([road, i, d]); else if (d < e[2]) { e[1] = i; e[2] = d; }
+    }
   }
   const farSample = (x, z, out) => {
     const H = SPW.H0, l = farIdx.get(Math.floor(x / FB) * 8192 + Math.floor(z / FB));
+    // the road whose surface is nearest wins (on a road beats on another road's verge): the roundabout over the
+    // interstate's edge ramp where they meet
+    let best = null, bt = 1;
     if (l) for (const [road, s0] of l) {
       let s = s0;
       if (road.interstate) s = Math.max(road.from, Math.min(road.to - 1, Math.round((x - road.x[0]) / road.ds)));
       const d = projectRoad(road, s, x, z);
       if (d >= road.hw + RAMP) continue;
       const t = d <= road.hw ? 0 : (d - road.hw) / RAMP;
+      if (t < bt || !best) { bt = t; best = [road, s]; }
+      if (t === 0) break;
+    }
+    if (best) {
+      const [road, s] = best, d = projectRoad(road, s, x, z), t = d <= road.hw ? 0 : (d - road.hw) / RAMP;
       if (out) {
         let gx = proj.tx * proj.slope, gz = proj.tz * proj.slope;
         if (t > 0) { const k = (H - proj.h) / RAMP / d; gx += (x - proj.px) * k; gz += (z - proj.pz) * k; }
@@ -946,6 +969,7 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
   // round the roundabout 20 miles east, mile signs, and world.corridor (the strip of prairie the cars may drive in)
   function speedwayExtras() {
     const H = SPW.H0, oval = roads[0], pitR = roads[2], acc = SP.acc;
+    world.beats = [1, 3, 1];   // patrols drive the ranch road and the boulevard, never the oval
     world.speedway = { ...SPW, kApex: SP.kApex, kt: SP.kt, walls: [], pitWall: [], lips: [], grand: [] };
     const W = world.speedway;
     for (let i = 0; i < oval.n; i++) for (const half of [0, 0.5]) {
@@ -1003,6 +1027,17 @@ export function buildWorld(regionId = 'mountain', opts = {}) {
     world.towns.push(town);
     places.farBarn = { ...barn, y: H, yaw: Math.atan2(xE + 55 - barn.x, zI - barn.z) };
     // mile signs both ways: eastbound on the right (miles to go), westbound on the left (miles back to Trackside)
+    { // the truck stop's diner, shed and fuel canopy, a little way off the interstate past its garage
+      const T = places.truckStop, ax = Math.sin(T.yaw), az = Math.cos(T.yaw), at = (a, l) => ({ x: T.x + ax * a + T.lx * l, z: T.z + az * a + T.lz * l });
+      const stop = { name: RG.truckStop, x: T.x, z: T.z, road: 4, from: T.idx - 60, to: T.idx + 60, buildings: [], lamps: [], signs: [], far: true, quiet: true };
+      const yawB = Math.atan2(-T.lx, -T.lz);
+      for (const [a, l, w, d, h, kind] of [[40, 18, 22, 12, 4.6, 'shop'], [72, 22, 14, 10, 5.5, 'shed']]) { const o = { ...at(a, l), yaw: yawB, w, d, h, kind, lo: H, hi: H, wall: 0.3, roof: 0.6, seed: 0.4 }; stop.buildings.push(o); solidBox(o); }
+      W.canopy = { ...at(-10, 0), yaw: T.yaw, w: 26, d: 14, h: 5.6 };
+      for (const a of [-11, 11]) for (const l of [-5, 5]) { const q = at(-10 + a, l); world.addCollider(q.x, q.z, 0.4); }
+      for (const a of [-6, 6]) { const q = at(-10 + a, 0); world.addCollider(q.x, q.z, 0.9); }   // pump islands
+      for (let a = -60; a <= 60; a += 20) stop.lamps.push({ ...at(a, -55), y: H, yaw: yawB });
+      world.towns.push(stop);
+    }
     W.miles = [];
     for (let m = 1; m < SPW.miles; m++) { const x = SPW.xI + m * 1609.34; W.miles.push({ x, z: zI + ist.hw + 4, left: SPW.miles - m, yaw: -Math.PI / 2, to: RG.farTown }, { x: x + 40, z: zI - ist.hw - 4, left: m, yaw: Math.PI / 2, to: RG.towns[0] }); }
     world.corridor = { x0: HALF - 60, x1: xE + 450, z0: zI - 1150, z1: zI + 1150, h: H };
